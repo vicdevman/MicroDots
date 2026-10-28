@@ -104,9 +104,9 @@ pnpm test                # unit
 pnpm test:integration    # real Postgres via Testcontainers
 pnpm test:e2e            # Playwright
 pnpm build
+pnpm db:up               # dev Postgres (Docker)
 pnpm db:generate
 pnpm db:migrate
-pnpm db:seed
 ```
 
 Before you finish: `pnpm check && pnpm test` must pass. If you cannot run something, say so explicitly in the PR.
@@ -238,9 +238,9 @@ Ask with: the conflict, the options, your recommendation, and the cost of each. 
 
 ## 12. Current focus
 
-- **Milestone:** M0 — Bedrock.
-- **Epics:** E1 (repo, tooling, CI); E0 documentation is complete.
+- **Milestone:** M0 — Bedrock, complete locally. The first CI run and green default branch happen on the first push.
+- **Epics:** E0 and E1 complete.
 - **License:** AGPL-3.0-only, decided (ADR-0009, `LICENSE` present). SDK/contracts licensing is D17.
-- **Next:** finish the monorepo scaffold, strict TS, Biome boundaries, Vitest/Playwright, CI, dev Postgres.
+- **Next:** push, confirm CI green, then start M1 (installer and auth).
 
-Do not start M1 (installer/auth) until M0's exit criteria are met.
+Do not start M1 (installer/auth) until M0's exit criteria are met, including a green CI run.

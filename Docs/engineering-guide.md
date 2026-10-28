@@ -1,10 +1,10 @@
 # MicroDots — Engineering Guide
 
-**Status:** Active conventions (target state; the monorepo is scaffolded in M0)
+**Status:** Active conventions (M0 scaffold complete; later sections describe the target state)
 **Audience:** Contributors, maintainers, AI agents
 **Related:** [`technical-architecture.md`](./technical-architecture.md) · [`data-model.md`](./data-model.md) · [`api-contracts.md`](./api-contracts.md) · [`AGENTS.md`](../AGENTS.md)
 
-> The commands below describe the intended workflow and are not runnable until the M0 scaffold lands.
+> The M0 scaffold runs today. Installer, auth, migrations and the setup token land in M1.
 
 ---
 
@@ -17,12 +17,10 @@ corepack enable
 pnpm install
 cp .env.example .env.local
 pnpm db:up          # docker compose -f compose.dev.yaml up -d postgres
-pnpm db:migrate
-pnpm db:seed        # fake engine, default workers, demo project
-pnpm dev            # api :3000, web :5173, worker
+pnpm dev            # api :3000, web :5173, idle worker
 ```
 
-Open `http://localhost:5173`. In development, `pnpm dev` writes the setup token to `.dev/setup-token` and prints it from the dev launcher (never from the API log).
+Open `http://localhost:5173`. Check `GET /healthz` for the process and `GET /readyz` for the database. In development the API starts even when Postgres is down; `/readyz` returns 503 until it is reachable. Migrations, seed data and the setup token arrive in M1.
 
 | Command | Purpose |
 |---|---|
@@ -31,13 +29,13 @@ Open `http://localhost:5173`. In development, `pnpm dev` writes the setup token 
 | `pnpm check` | Lint + format check + typecheck |
 | `pnpm test` | Unit tests (Vitest) |
 | `pnpm test:integration` | DB/queue tests (Testcontainers) |
-| `pnpm test:e2e` | Playwright against a composed stack |
+| `pnpm test:e2e` | Playwright against the web dev server |
 | `pnpm db:generate` | Generate a migration from schema changes |
 | `pnpm db:migrate` | Apply migrations |
 | `pnpm db:studio` | Drizzle Studio |
 | `pnpm docs:check` | Broken links, required docs present |
 
-Node 22.x, pnpm 10.x. `.nvmrc` is authoritative.
+Node 22.x, pnpm 12.x. `.nvmrc` is authoritative.
 
 ---
 

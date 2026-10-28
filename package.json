@@ -1,0 +1,46 @@
+{
+  "name": "microdots",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=22.12.0",
+    "pnpm": ">=12.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm build:packages && concurrently -n api,worker,web -c blue,magenta,green \"pnpm --filter @microdots/server dev:api\" \"pnpm --filter @microdots/server dev:worker\" \"pnpm --filter @microdots/web dev\"",
+    "build": "pnpm build:packages && pnpm --filter @microdots/web build",
+    "build:packages": "tsc -b",
+    "check": "biome check . && tsc -b && tsc -p apps/web/tsconfig.json --noEmit",
+    "check:fix": "biome check --write . && tsc -b && tsc -p apps/web/tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "playwright test",
+    "db:up": "docker compose -f compose.dev.yaml up -d postgres",
+    "db:down": "docker compose -f compose.dev.yaml down",
+    "db:generate": "pnpm --filter @microdots/db db:generate",
+    "db:migrate": "pnpm --filter @microdots/db db:migrate",
+    "db:studio": "pnpm --filter @microdots/db db:studio",
+    "docs:check": "node scripts/check-docs.mjs",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "commitlint": "commitlint"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.0",
+    "@changesets/cli": "^2.29.0",
+    "@commitlint/cli": "^19.8.0",
+    "@commitlint/config-conventional": "^19.8.0",
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^22.18.0",
+    "@vitest/coverage-v8": "^3.2.0",
+    "concurrently": "^9.2.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

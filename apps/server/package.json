@@ -1,0 +1,24 @@
+{
+  "name": "@microdots/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "build": "tsc -b",
+    "dev:api": "tsx watch src/index.ts",
+    "dev:worker": "tsx watch src/worker.ts",
+    "start": "node dist/index.js",
+    "start:worker": "node dist/worker.js"
+  },
+  "dependencies": {
+    "@microdots/config": "workspace:*",
+    "@microdots/contracts": "workspace:*",
+    "@microdots/db": "workspace:*",
+    "fastify": "^5.5.0",
+    "pino": "^9.9.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0"
+  }
+}

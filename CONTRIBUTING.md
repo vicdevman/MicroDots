@@ -46,12 +46,10 @@ corepack enable
 pnpm install
 cp .env.example .env.local
 pnpm db:up
-pnpm db:migrate
-pnpm db:seed
 pnpm dev
 ```
 
-Requirements: Node 22.x, pnpm 10.x, Docker (for Postgres).
+Requirements: Node 22.x, pnpm 12.x, Docker (for Postgres).
 
 Before pushing:
 

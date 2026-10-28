@@ -21,7 +21,7 @@
 
 **Definition of ready:** the story has an owner, a milestone, acceptance criteria (implicit in the row), no unresolved product decision, and the docs it touches are known.
 
-**Current focus:** `M0` — E1 (repo, tooling, CI). E0 is complete; license D1 is resolved (AGPL-3.0-only).
+**Current focus:** `M0` scaffold complete locally; the first CI run happens on the first push. `M1` is next. E0 and E1 are complete; license D1 is resolved (AGPL-3.0-only).
 
 ---
 
@@ -29,8 +29,8 @@
 
 | Epic | Scope | Milestone | Done | Total |
 |---|---|---|---|---|
-| E0 | Product & docs | M0 | 10 | 11 |
-| E1 | Repo, tooling, CI | M0 | 0 | 10 |
+| E0 | Product & docs | M0 | 11 | 11 |
+| E1 | Repo, tooling, CI | M0 | 10 | 10 |
 | E2 | Installer & deployment | M1 | 0 | 16 |
 | E3 | Auth & onboarding | M1 | 0 | 14 |
 | E4 | Data layer | M2 | 0 | 9 |
@@ -77,16 +77,16 @@ MVP (`v0.1.0`) = E0–E13 plus the E20-S1…S6 release gates. E14+ is explicitly
 
 | ID | Story | Status | Refs |
 |---|---|---|---|
-| E1-S1 | Initialize monorepo: pnpm workspaces, apps/packages, base tsconfig | ⬜ | ADR-0001 |
-| E1-S2 | Strict TypeScript config + shared path aliases | ⬜ | eng-guide §3 |
-| E1-S3 | Biome lint/format with import boundary rules | ⬜ | eng-guide §6 |
-| E1-S4 | Vitest setup + first policy/domain tests | ⬜ | |
-| E1-S5 | Testcontainers Postgres harness | ⬜ | |
-| E1-S6 | Playwright skeleton for e2e | ⬜ | |
-| E1-S7 | `.env.example` validated by `packages/config` | ⬜ | |
-| E1-S8 | Dev compose with Postgres only | ⬜ | |
-| E1-S9 | CI: install, check, test, build, docs links, secret scan | ⬜ | eng-guide §7 |
-| E1-S10 | Changesets + conventional commit + PR template | ⬜ | |
+| E1-S1 | Initialize monorepo: pnpm workspaces, apps/packages, base tsconfig | ✅ | ADR-0001 |
+| E1-S2 | Strict TypeScript config + shared path aliases | ✅ | eng-guide §3 |
+| E1-S3 | Biome lint/format with import boundary rules | ✅ | eng-guide §6 |
+| E1-S4 | Vitest setup + first policy/domain tests | ✅ | |
+| E1-S5 | Testcontainers Postgres harness | ✅ | Docker required; not run on this Windows host |
+| E1-S6 | Playwright skeleton for e2e | ✅ | `test:e2e` passes with Chromium installed |
+| E1-S7 | `.env.example` validated by `packages/config` | ✅ | |
+| E1-S8 | Dev compose with Postgres only | ✅ | |
+| E1-S9 | CI: install, check, test, build, docs links, secret scan | ✅ | Workflow added; first run pending push |
+| E1-S10 | Changesets + conventional commit + PR template | ✅ | |
 
 ---
 

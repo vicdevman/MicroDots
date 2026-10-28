@@ -67,12 +67,14 @@ A phase that ships features but moves none of these is a failed phase.
 
 **Goal:** A repository that any agent or contributor can enter and work in without asking questions.
 
+**Status:** Complete locally (`pnpm check`, `pnpm test`, `pnpm build`, `pnpm docs:check`, e2e smoke). The first CI run and green default branch happen on the first push.
+
 **Scope**
 
 - Monorepo scaffold (pnpm workspaces) with `apps/web`, `apps/server`, `packages/*`, `deploy/`, `skills/`.
 - TypeScript strict, Biome, Vitest, Playwright, commit conventions, PR template.
 - CI: lint, typecheck, unit tests, build. No deploy yet.
-- `docker-compose.dev.yml` with Postgres only.
+- `compose.dev.yaml` with Postgres only.
 - Documentation set (this folder) merged and linked from README.
 - Decision log opened; ADR-0001–0010 recorded.
 - License decided: AGPL-3.0-only (ADR-0009); `LICENSE` present. SDK/contracts license remains D17.

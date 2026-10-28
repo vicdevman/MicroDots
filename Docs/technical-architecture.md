@@ -97,7 +97,7 @@ What we explicitly refuse:
 |---|---|---|---|---|
 | Language | TypeScript (strict) | 5.x | One language across stack; shared contracts | Free |
 | Runtime | Node.js LTS | 22 | Stable, native fetch/WebCrypto, wide support | Free |
-| Package manager | pnpm workspaces | 10.x | Fast, strict, good monorepo ergonomics | Free |
+| Package manager | pnpm workspaces | 12.x | Fast, strict, good monorepo ergonomics | Free |
 | API framework | Fastify | 5.x | Schema-first, fast, first-class SSE/streams, plugins | Free |
 | Validation | Zod | 4.x | Runtime + types; shared with client | Free |
 | ORM / migrations | Drizzle ORM + drizzle-kit | latest | SQL-first, typed, no runtime magic, good migrations | Free |

@@ -1,0 +1,22 @@
+name: microdots-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-microdots}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-microdots_dev_only}
+      POSTGRES_DB: ${POSTGRES_DB:-microdots}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-microdots} -d ${POSTGRES_DB:-microdots}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:

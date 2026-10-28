@@ -150,8 +150,8 @@ This mirrors PRD §34.4 and is enforced in code review.
 | Data model | Defined (logical) — `data-model.md` |
 | API contracts | Defined (v1 draft) — `api-contracts.md` |
 | UX | Defined (structure and flows); visual design pending |
-| Code | M0 scaffold in progress |
+| Code | M0 scaffold complete; M1 not started |
 | Installer | Specified, not implemented |
 | License | **Decided** — AGPL-3.0-only (`ADR-0009`, `LICENSE` present) |
 
-The immediate next action is finishing `M0` in the roadmap: repository scaffold, CI, and the first vertical slice.
+The immediate next action is `M1` in the roadmap: installer, auth and setup wizard. The M0 exit criteria are met locally; the first CI run and green default branch happen on the first push.

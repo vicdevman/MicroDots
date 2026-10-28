@@ -1,0 +1,196 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/node_modules",
+      "!**/coverage",
+      "!**/.git",
+      "!**/playwright-report",
+      "!**/test-results",
+      "!**/*.md",
+      "!pnpm-lock.yaml"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended"
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["packages/domain/**", "packages/policy/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "node:fs": "Domain and policy are pure; do I/O through an application port.",
+                  "node:path": "Domain and policy are pure; do path work at the application edge.",
+                  "node:crypto": "Domain and policy are pure; randomness belongs at the edge.",
+                  "fastify": "Domain and policy must not depend on the HTTP layer.",
+                  "drizzle-orm": "Domain and policy must not depend on the database layer.",
+                  "postgres": "Domain and policy must not depend on the database layer.",
+                  "@microdots/db": "Domain and policy must not depend on the database layer.",
+                  "@microdots/engines": "Domain and policy must not depend on engine implementations.",
+                  "@microdots/adapters": "Domain and policy must not depend on adapter implementations.",
+                  "@microdots/ai": "Domain and policy must not depend on model providers.",
+                  "@microdots/ui": "Domain and policy must not depend on the UI layer."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/contracts/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "fastify": "Contracts must stay framework-agnostic.",
+                  "drizzle-orm": "Contracts must stay storage-agnostic.",
+                  "postgres": "Contracts must stay storage-agnostic.",
+                  "@microdots/db": "Contracts must stay storage-agnostic."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/db/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "fastify": "The database package must not depend on HTTP.",
+                  "react": "The database package must not depend on the UI.",
+                  "@microdots/engines": "The database package must not depend on engines.",
+                  "@microdots/adapters": "The database package must not depend on adapters.",
+                  "@microdots/ai": "The database package must not depend on model providers.",
+                  "@microdots/ui": "The database package must not depend on the UI."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/engines/**", "packages/adapters/**", "packages/ai/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "fastify": "Modules must not depend on the HTTP layer.",
+                  "react": "Modules must not depend on the UI.",
+                  "@microdots/db": "Modules receive ports, not the database implementation.",
+                  "@microdots/ui": "Modules must not depend on the UI."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/ui/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "node:fs": "The UI package must stay runtime-agnostic.",
+                  "node:path": "The UI package must stay runtime-agnostic.",
+                  "fastify": "The UI package must not depend on the server.",
+                  "@microdots/db": "The UI package must not depend on the database.",
+                  "@microdots/engines": "The UI package must not depend on engines.",
+                  "@microdots/adapters": "The UI package must not depend on adapters.",
+                  "@microdots/ai": "The UI package must not depend on model providers."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/web/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "fastify": "The web app must not import the server.",
+                  "@microdots/db": "The web app must not import the database.",
+                  "@microdots/engines": "The web app must not import engine implementations.",
+                  "@microdots/adapters": "The web app must not import adapter implementations.",
+                  "@microdots/ai": "The web app must not import model providers."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/server/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "react": "The server must not depend on the UI.",
+                  "react-dom": "The server must not depend on the UI.",
+                  "@microdots/ui": "The server must not depend on the UI package."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

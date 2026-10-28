@@ -8,7 +8,7 @@ One orchestrator plans the work. Specialized workers do it. A policy engine deci
 [![License](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](./LICENSE)
 [![Stack](https://img.shields.io/badge/stack-TypeScript%20%C2%B7%20Node%20%C2%B7%20React%20%C2%B7%20Postgres-3178c6)](#tech-stack)
 
-> **Project status:** documentation and architecture complete; implementation starts at M0. Nothing here is installable yet. The roadmap below is the plan, not a changelog.
+> **Project status:** documentation, architecture, and the M0 repository scaffold are complete. The app is a development shell; nothing here is installable yet. M1 (installer, auth, and the first authenticated shell) is next. The roadmap below is the plan, not a changelog.
 
 ---
 
@@ -161,21 +161,19 @@ Open the URL, paste the token, create a passkey, add a model key, connect a repo
 
 ### Local development
 
-> Target flow once the monorepo is scaffolded (M0). The commands do not run yet.
+> The M0 scaffold runs. Installer, auth, migrations and the setup token arrive in M1.
 
 ```bash
 corepack enable
 pnpm install
 cp .env.example .env.local
-pnpm db:up
-pnpm db:migrate
-pnpm db:seed
-pnpm dev
+pnpm db:up          # PostgreSQL 17 via Docker; the API starts without it but /readyz stays 503
+pnpm dev            # API :3000, web :5173, idle worker
 ```
 
 - Web: `http://localhost:5173`
 - API: `http://localhost:3000`
-- Dev setup token: `.dev/setup-token`
+- Health: `/healthz` (process) and `/readyz` (database)
 
 See [`Docs/engineering-guide.md`](./Docs/engineering-guide.md).
 
