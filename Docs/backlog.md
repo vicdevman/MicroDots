@@ -85,7 +85,7 @@ MVP (`v0.1.0`) = E0–E13 plus the E20-S1…S6 release gates. E14+ is explicitly
 | E1-S6 | Playwright skeleton for e2e | ✅ | `test:e2e` passes with Chromium installed |
 | E1-S7 | `.env.example` validated by `packages/config` | ✅ | |
 | E1-S8 | Dev compose with Postgres only | ✅ | |
-| E1-S9 | CI: install, check, test, build, docs links, secret scan | ✅ | Workflow added; first run pending push |
+| E1-S9 | CI: install, check, test, build, docs links, secret scan | ✅ | First run exposed a gitleaks root-commit bug; replaced with a pinned CLI scan |
 | E1-S10 | Changesets + conventional commit + PR template | ✅ | |
 
 ---
