@@ -243,9 +243,10 @@ Ask with: the conflict, the options, your recommendation, and the cost of each. 
 
 ## 12. Current focus
 
-- **Milestone:** M0 — Bedrock, complete locally. The first CI run and green default branch happen on the first push.
-- **Epics:** E0 and E1 complete.
+- **Milestone:** M1 - installer and auth. M1A (production spine) is complete and green in CI.
+- **Epics:** E0 and E1 complete. E2 and E4 are in progress.
 - **License:** AGPL-3.0-only, decided (ADR-0009, `LICENSE` present). SDK/contracts licensing is D17.
-- **Next:** push, confirm CI green, then start M1 (installer and auth).
+- **Next:** M1B - better-auth, setup token, owner creation, sessions and route guards.
+  Then M1C (passkeys/recovery) and M1D (installer/wizard).
 
-Do not start M1 (installer/auth) until M0's exit criteria are met, including a green CI run.
+Do not start M2 until M1's exit criteria are met, including a green CI run and a fresh-VPS install.
