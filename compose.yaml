@@ -1,0 +1,128 @@
+name: microdots
+
+x-app: &app
+  image: ghcr.io/microdots/app:${MICRODOTS_VERSION:-dev}
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment:
+    MICRODOTS_ENV: production
+    MICRODOTS_URL: https://${MICRODOTS_DOMAIN:?set MICRODOTS_DOMAIN}
+    DATABASE_URL: postgres://microdots:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/microdots
+    MICRODOTS_SESSION_SECRET: ${MICRODOTS_SESSION_SECRET:?set MICRODOTS_SESSION_SECRET}
+    MICRODOTS_MASTER_KEY_FILE: /data/secrets/master.key
+    MICRODOTS_SETUP_TOKEN_FILE: /data/secrets/setup-token
+    MICRODOTS_WORKSPACE_ROOT: /workspaces
+    MICRODOTS_ARTIFACT_ROOT: /data/artifacts
+    MICRODOTS_DEFAULT_MODE: ${MICRODOTS_DEFAULT_MODE:-balanced}
+    MICRODOTS_TELEMETRY: ${MICRODOTS_TELEMETRY:-off}
+    MICRODOTS_LOG_LEVEL: ${MICRODOTS_LOG_LEVEL:-info}
+  volumes:
+    - data:/data
+    - workspaces:/workspaces
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  cap_add:
+    - CHOWN
+    - DAC_OVERRIDE
+    - SETUID
+    - SETGID
+  security_opt:
+    - no-new-privileges:true
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  restart: unless-stopped
+
+services:
+  app:
+    <<: *app
+    command: ["node", "apps/server/dist/index.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/readyz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    <<: *app
+    command: ["node", "apps/server/dist/worker.js"]
+    depends_on:
+      app:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: microdots
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: microdots
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U microdots -d microdots"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      MICRODOTS_DOMAIN: ${MICRODOTS_DOMAIN:?set MICRODOTS_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  data:
+  workspaces:
+  caddy_data:
+  caddy_config:

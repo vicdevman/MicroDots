@@ -94,10 +94,10 @@ MVP (`v0.1.0`) = E0–E13 plus the E20-S1…S6 release gates. E14+ is explicitly
 
 | ID | Story | Status | Refs |
 |---|---|---|---|
-| E2-S1 | Production `compose.yaml` (caddy, app, worker, postgres, runner) | ⬜ | INS-001 |
-| E2-S2 | Multi-stage Dockerfile for app/worker | ⬜ | |
+| E2-S1 | Production `compose.yaml` (caddy, app, worker, postgres, runner) | 🟨 | INS-001 — app/worker/Postgres/Caddy in M1A; runner in M5 |
+| E2-S2 | Multi-stage Dockerfile for app/worker | ✅ | |
 | E2-S3 | Runner image with engine runtime, non-root, limits | ⬜ | SEC-002 |
-| E2-S4 | Caddyfile with TLS, headers, compression, proxy | ⬜ | |
+| E2-S4 | Caddyfile with TLS, headers, compression, proxy | ✅ | |
 | E2-S5 | `install.sh`: OS/arch/resource checks | ⬜ | INS-001 |
 | E2-S6 | Secret generation and `/data/secrets` permissions | ⬜ | INS-006, SEC-005 |
 | E2-S7 | `.env` creation, backup-before-change, 0600 | ⬜ | INS-008 |
@@ -138,8 +138,8 @@ MVP (`v0.1.0`) = E0–E13 plus the E20-S1…S6 release gates. E14+ is explicitly
 
 | ID | Story | Status | Refs |
 |---|---|---|---|
-| E4-S1 | Drizzle schema: all v1 tables and enums | ⬜ | data-model |
-| E4-S2 | Migration pipeline + advisory lock at boot | ⬜ | |
+| E4-S1 | Drizzle schema: all v1 tables and enums | 🟨 | data-model — `system_state` bootstrapped in M1A |
+| E4-S2 | Migration pipeline + advisory lock at boot | ✅ | |
 | E4-S3 | Seed: instance, default workers, fake engine, demo project | ⬜ | |
 | E4-S4 | Repositories for tasks, events, approvals, runs, projects | ⬜ | |
 | E4-S5 | SecretStore (AES-256-GCM, key file, rotate) | ⬜ | SEC-005 |

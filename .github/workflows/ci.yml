@@ -31,6 +31,24 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+  production:
+    name: Production image and compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate production compose
+        run: |
+          cat > .env <<'EOF'
+          MICRODOTS_DOMAIN=localhost
+          ACME_EMAIL=admin@example.com
+          POSTGRES_PASSWORD=ci-placeholder-not-a-real-password
+          MICRODOTS_SESSION_SECRET=ci-placeholder-not-a-real-session-secret
+          EOF
+          docker compose config > /dev/null
+      - name: Build app image
+        run: docker build --tag microdots-app:ci .
+
   integration:
     name: Integration (real Postgres)
     runs-on: ubuntu-latest
