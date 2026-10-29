@@ -130,6 +130,19 @@
       }
     },
     {
+      "includes": ["packages/avatars/src/bot/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off"
+          },
+          "complexity": {
+            "useMathMinMax": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["packages/ui/**"],
       "linter": {
         "rules": {

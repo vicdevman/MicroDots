@@ -11,6 +11,7 @@ const packageAliases = {
   "@microdots/adapters": "./packages/adapters/src/index.ts",
   "@microdots/ai": "./packages/ai/src/index.ts",
   "@microdots/ui": "./packages/ui/src/index.ts",
+  "@microdots/avatars": "./packages/avatars/src/index.ts",
 } as const;
 
 export default defineConfig({

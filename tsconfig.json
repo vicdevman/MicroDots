@@ -10,6 +10,7 @@
     { "path": "packages/adapters" },
     { "path": "packages/ai" },
     { "path": "packages/ui" },
+    { "path": "packages/avatars" },
     { "path": "apps/server" }
   ]
 }

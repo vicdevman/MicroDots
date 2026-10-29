@@ -74,6 +74,9 @@ packages/
   adapters/   IntegrationAdapter contract + implementations
   ai/         provider registry, prompts, planner
   ui/         design system
+  avatars/    agent avatars: SVG morph engine + <microdots-bot> web component
+              (per-agent shape/colour/expression customisation, agent state →
+              avatar state; see packages/avatars/README.md and ORIGIN.md)
   config/     env schema, constants, compat ranges
 ```
 
@@ -85,6 +88,8 @@ packages/domain  → contracts, policy
 packages/db      → contracts
 packages/engines → contracts, config
 packages/adapters→ contracts, config
+packages/avatars → (none: pure engine, no dependency; apps/web → avatars
+                    allowed — the avatar never imports other packages)
 apps/web         → contracts, ui
 ```
 
