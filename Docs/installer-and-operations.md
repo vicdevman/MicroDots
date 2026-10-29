@@ -87,9 +87,11 @@ Both are documented. The script supports:
    - Postgres password
    - Engine credentials are **not** core env vars: each engine gets its own scoped token in its registry/config at registration time
 
-   A direct `docker compose up` without the installer is also supported: the app entrypoint
-   generates the master key and setup token if they are absent and never overwrites them.
-   The installer remains responsible for the session secret, Postgres password and VAPID keys.
+   A direct `docker compose up` without the installer is also supported: on first boot the
+   app entrypoint generates the master key and setup token if they are absent, writes
+   `/data/.initialized`, and never overwrites existing material. After setup, deleting the
+   token does not cause a restart to mint a new one. The installer remains responsible for
+   the session secret, Postgres password and VAPID keys.
 6. Write `compose.yaml` + `compose.override.yaml` (site-specific values only).
 7. Pull pinned images (by digest) and start `postgres`, then `app` (migrations run at boot), then `worker`, `caddy`, and the runner if enabled.
 8. Wait for `/readyz` with a 120 s timeout; on failure, dump sanitized diagnostics.

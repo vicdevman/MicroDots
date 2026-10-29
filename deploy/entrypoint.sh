@@ -20,17 +20,23 @@ generate_setup_token() {
   chmod 600 "$file"
 }
 
-generate_master_key
-generate_setup_token
+# First boot only. After the owner claims the instance, the app deletes the
+# setup token; the marker stops a restart from creating a fresh one.
+if [ ! -f /data/.initialized ]; then
+  generate_master_key
+  generate_setup_token
+  touch /data/.initialized
+fi
 
 if [ "$(id -u)" = "0" ]; then
-  chown node:node \
-    /data \
-    /data/secrets \
-    /data/artifacts \
-    /workspaces \
-    /data/secrets/master.key \
-    /data/secrets/setup-token
+  chown node:node /data /data/secrets /data/artifacts /workspaces
+
+  for file in /data/secrets/master.key /data/secrets/setup-token /data/.initialized; do
+    if [ -e "$file" ]; then
+      chown node:node "$file"
+    fi
+  done
+
   exec su-exec node "$@"
 fi
 

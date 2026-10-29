@@ -6,7 +6,8 @@ Production artifacts are landing with M1. The current slice (M1A) includes:
 - `Dockerfile` — multi-stage build for the app and worker.
 - `Caddyfile` — automatic TLS, compression, security headers and structured access logs.
 - `entrypoint.sh` — prepares the `/data` and `/workspaces` volumes, generates the master
-  key and setup token on first boot (mode 0600), then drops to the `node` user.
+  key and setup token on first boot only (mode 0600, guarded by `/data/.initialized`),
+  then drops to the `node` user.
 - `env.production.example` — the values the installer will generate in M1D.
 
 Still to come: `install.sh`, `compose.override.yaml`, the runner image, and the backup,
@@ -29,6 +30,8 @@ open ports 80 and 443.
 The container generates `/data/secrets/master.key` and `/data/secrets/setup-token` once.
 Read the setup token from the host with `docker compose exec app cat /data/secrets/setup-token`
 (the app never logs it). The session secret and Postgres password still come from `.env`.
+After the owner claims the instance, the app removes the token; the `/data/.initialized`
+marker keeps a restart from minting a new one.
 
 Boot migrations run inside the app before it starts listening. A Postgres advisory lock
 serializes concurrent app starts, so rolling a second instance cannot race the schema.
