@@ -91,7 +91,7 @@ Existing reverse proxy (nginx/Caddy/Traefik) ──► app (Fastify, unprivilege
 | browser service | Unprivileged, no host display | Shared Chromium/Playwright, on-demand, one or few contexts |
 | Postgres | Local or managed | Truth, queue, audit, events, memory |
 
-`app` and `worker` share code and contracts. They never receive root, the Docker socket, or arbitrary systemd control.
+**Separation of concerns.** Agent definitions are durable configuration (role, model, prompt, capability ceiling, avatar). Task creation happens in the app. Scheduling and admission happen in the worker. Execution happens in a short-lived unit, not a long-lived agent process. This keeps agent identity separate from execution and lets the scheduler queue, stop or replace a run without killing an agent.\n\n`app` and `worker` share code and contracts. They never receive root, the Docker socket, or arbitrary systemd control.
 
 ### 3.2 Why a helper
 
