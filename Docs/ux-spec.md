@@ -70,7 +70,13 @@ Settings
 ├─ Notifications
 ├─ Security (sessions, passkeys, recovery, API tokens)
 ├─ Data (backup, export, retention)
-└─ System health & logs
+└─ System
+   ├─ Health & logs
+   ├─ Resources (host, budget, queue, cleanup)   (P2)
+   └─ Memory (inspect/forget/export)              (P6)
+
+Browser takeover (P5)
+└─ /runs/:id/browser (screenshot + input; WebRTC later)
 ```
 
 ### Navigation by viewport
@@ -85,7 +91,7 @@ Settings
 
 ---
 
-## 3. Screen inventory (MVP)
+## 3. Screen inventory (active path)
 
 | # | Screen | Route | Purpose |
 |---|---|---|---|
@@ -104,8 +110,11 @@ Settings
 | 13 | Settings | `/settings/*` | Mode, providers, security, data |
 | 14 | Security | `/settings/security` | Sessions, passkeys, tokens, recovery |
 | 15 | System | `/settings/system` | Health, version, logs, diagnostics |
+| 16 | Resources | `/settings/resources` | Host, budget, queue, usage, cleanup (P2) |
+| 17 | Browser takeover | `/runs/:id/browser` | Screenshot/input human takeover (P5) |
+| 18 | Memory | `/memory` | Inspect, correct, forget, export (P6) |
 
-Post-MVP: Skills, Integrations, Rooms, Usage, Audit viewer, Members.
+Later / deferred product track: Skills, Integrations, Rooms, Audit viewer, Members.
 
 ---
 
@@ -332,6 +341,52 @@ Every step is skippable except claim and owner; skipping shows a persistent, dis
 
 Engine cards show version, health, slots, and a one-line remediation when unhealthy. "Add engine" opens a guided form with the engine's config schema rendered from JSON Schema.
 
+### 4.9 Resources (P2)
+
+```text
+┌───────────────────────────────────────────────────────────────┐
+│ System · Resources                             updated 3s ago  │
+│                                                               │
+│ HOST            4.0 GB total · 1.1 GB free · load 0.82        │
+│ Reserve         1.0 GB (protected)                            │
+│ MicroDots       2.0 GB budget · 1.6 GB in use                 │
+│ PSI memory      some 0.4% · full 0.0%                         │
+│                                                               │
+│ RUNNING         Coder · heavy · 12m · 1.4 GB · 0.9 CPU        │
+│                 Browser · idle · stopping in 2m               │
+│                                                               │
+│ QUEUED (2)                                                    │
+│ • Fix build      heavy   RESOURCE_HEAVY_BUSY   starts ~12m    │
+│ • Deploy staging standard RESOURCE_MEMORY       starts ~14m   │
+│                                                               │
+│ CLEANUP         last: clean · 2m ago · 0 orphans              │
+│ [ Run cleanup ]                                               │
+└───────────────────────────────────────────────────────────────┘
+```
+
+Rules:
+
+- Show measured values and label estimates.
+- Every queued item has one stable reason and an explanation of what would unblock it.
+- The budget is read-only in the app; changing it is an operator action with a documented command.
+- Cleanup failure is loud and offers a retry.
+
+### 4.10 Browser takeover (P5)
+
+- Opens as a full-screen view, not a modal inside a modal.
+- Shows the live page as a screenshot with input controls; WebRTC is a later enhancement.
+- A banner explains why the task paused and what the human must do.
+- The takeover session is scoped, expiring and audited; "Done" resumes the task.
+- The agent is visibly paused; the human never has to guess whether it is still acting.
+
+### 4.11 Agent avatars (P4)
+
+- `<microdots-bot>` appears on task cards, task detail and the agent roster.
+- State is event-driven: idle, thinking, working, waiting, blocked, done, failed (mapped to the package's visual states).
+- Initials fallback for unknown agents; accessible name includes the agent and state.
+- The avatar never renders task content, secrets or capabilities, and never implies a permission.
+- No customization UI in the fast path.
+
 ---
 
 ## 5. Core flows
@@ -454,6 +509,10 @@ Built on Radix + Tailwind, themed with semantic tokens. No custom focus handling
 | `LogViewer` | Task detail | Virtualized, search, copy, redaction notice |
 | `CostMeter` | Task detail, Settings | Measured vs estimated |
 | `HealthCheckRow` | System | Status, latency, message |
+| `BudgetMeter` | Resources | Host reserve, MicroDots budget, measured use |
+| `QueueTable` | Resources | Profile, age, stable queue reason |
+| `CleanupStatus` | Resources, Task detail | Last cleanup, orphans, retry |
+| `AgentAvatar` | Task, Team | Event-driven identity/state; no content |
 | `EmptyState` | Everywhere | One sentence + one action |
 | `InlineError` | Forms, flows | Cause + fix + retry |
 | `ConnectionChip` | Global | Live / reconnecting / offline |
@@ -666,6 +725,10 @@ Examples:
 - Tasks empty: "No work yet. Ask MicroDots to fix, research or build something." → [Start in Home]
 - Approvals empty: "Nothing needs you. We'll notify you when something does."
 - Team empty (no engine): "No coding engine installed. Coding tasks can't run until you add one." → [Add OpenCode]
+- Queue empty: "Nothing is waiting. The host has room."
+- Cleanup failed: "A previous task left something behind. [Inspect] [Retry cleanup]" — never silent.
+- Memory empty: "No memories yet. Decisions you save will appear here with their sources."
+- Browser takeover: "The agent is paused. Finish the sign-in, then return to MicroDots."
 
 ---
 
@@ -682,11 +745,12 @@ These are product requirements, not polish:
 7. **Mode is always visible** in the composer; changing it confirms the effect.
 8. **Engine is always attributable.** Task cards show which engine did the work.
 9. **Every action is reversible or labeled irreversible.**
-10. **The system never pretends to be human.** Worker names and avatars are clearly AI.
+10. **The system never pretends to be human.** Worker names and avatars are clearly AI; avatar state reflects real events, not a decorative guess.
+11. **Resources are visible, not mysterious.** The owner can see the reserve, budget, queue reason and cleanup result.
 
 ---
 
-## 17. UX acceptance criteria (MVP)
+## 17. UX acceptance criteria (active fast path)
 
 - A first-time user completes setup and starts a task in under 10 minutes without documentation.
 - A user can identify what needs them within 3 seconds of opening Home.

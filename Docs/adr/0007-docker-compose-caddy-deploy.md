@@ -1,6 +1,6 @@
 # ADR-0007: Docker Compose + Caddy + one-command installer
 
-**Status:** Accepted
+**Status:** Partially superseded by [ADR-0011](./0011-native-systemd-execution.md) as the default runtime; remains valid as an optional Docker profile
 **Date:** 2026-10-28
 **Deciders:** Infrastructure, product
 
@@ -70,4 +70,5 @@ Ship **Docker Compose** as the deployment unit, **Caddy** for TLS and reverse pr
 
 - [`installer-and-operations.md`](../installer-and-operations.md)
 - [`technical-architecture.md`](../technical-architecture.md) §2, §14
-- [`roadmap.md`](../roadmap.md) M1, M6
+- [ADR-0011](./0011-native-systemd-execution.md) — native runtime is the default; this ADR is the optional Docker profile
+- [`product-roadmap.md`](../product-roadmap.md) M1, M6 — deferred product track

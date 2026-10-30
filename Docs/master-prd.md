@@ -2,11 +2,13 @@
 
 **Document type:** Master product specification and long-term product blueprint  
 **Product:** MicroDots  
-**Status:** Living specification — intended to guide planning, architecture, implementation, and future expansion  
+**Status:** Living specification — long-term product source of truth; active sequencing is the personal-operator track
 **Product model:** Open-source, self-hosted personal AI operations assistant  
 **Initial client:** Progressive Web App (PWA)  
 **Future client:** Native mobile application using React Native  
 **Core operating principle:** Human-directed AI orchestration with permissioned workers, persistent background execution, and controlled access to tools and infrastructure.
+
+> **Scope note (2026-10-30):** the active roadmap is [`roadmap.md`](./roadmap.md) (`P0`–`P7`): a personal operator on a shared native Linux host, with systemd/cgroups, operator-owned budgets, one real workflow, OpenCode and avatars. This PRD remains the long-term product source of truth. The original product milestones are preserved in [`product-roadmap.md`](./product-roadmap.md). This is a sequencing decision, not a removal of requirements; see [ADR-0013](./adr/0013-personal-operator-first.md).
 
 ---
 

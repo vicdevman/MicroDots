@@ -44,7 +44,8 @@ In scope:
 - Secret exposure in API responses, logs, events, prompts or the client bundle.
 - Path traversal, symlink escape, workspace escape.
 - SSRF, DNS rebinding, metadata endpoint access.
-- Container escape or privilege escalation from the runner.
+- Sandbox escape or privilege escalation from a native execution unit or an optional container.
+- Abuse of the privileged `microdots-exec` helper (path/argv validation, profile limits, peer credentials).
 - Prompt injection that causes an unauthorized tool execution.
 - Supply chain issues in bundled skills, engines or dependencies.
 - Cross-project or cross-user data access.
@@ -79,11 +80,12 @@ If in doubt, ask first.
 - Use HTTPS with a valid certificate; passkeys and web push require it.
 - Keep the host patched; enable unattended upgrades.
 - Restrict SSH to keys and a non-root user.
-- Expose only 80/443 (or use a tunnel).
+- Expose only the proxy ports (or use a tunnel); never expose the helper socket, Postgres or execution ports.
+- Keep a host reserve and an operator-owned MicroDots budget; do not run two heavy executions on a 4 GB / 1 vCPU host.
 - Back up regularly and store the backup passphrase separately from the backup.
 - Treat the master key as the most sensitive file on the instance.
 - Review approvals; do not grant capabilities you do not understand.
-- Run `microdots doctor` after upgrades.
+- Run `microdots doctor` after upgrades and check for orphan execution units.
 
 See [`Docs/security-and-auth.md`](./Docs/security-and-auth.md) for the full model.
 

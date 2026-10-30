@@ -14,6 +14,10 @@ const required = [
   "Docs/00-index.md",
   "Docs/product-thesis.md",
   "Docs/roadmap.md",
+  "Docs/backlog.md",
+  "Docs/native-execution-and-resources.md",
+  "Docs/product-roadmap.md",
+  "Docs/product-backlog.md",
   "Docs/technical-architecture.md",
   "Docs/extensibility-and-modules.md",
   "Docs/data-model.md",
@@ -25,10 +29,9 @@ const required = [
   "Docs/skills-system.md",
   "Docs/decisions.md",
   "Docs/glossary.md",
-  "Docs/backlog.md",
   "Docs/master-prd.md",
   "skills/README.md",
-  ...Array.from({ length: 10 }, (_, index) => {
+  ...Array.from({ length: 13 }, (_, index) => {
     const id = String(index + 1).padStart(4, "0");
     const name = {
       "0001": "monorepo-pnpm",
@@ -41,6 +44,9 @@ const required = [
       "0008": "engine-agnostic-execution",
       "0009": "license-agpl",
       "0010": "local-content-addressed-artifacts",
+      "0011": "native-systemd-execution",
+      "0012": "operator-owned-resource-budgets",
+      "0013": "personal-operator-first",
     }[id];
     return `Docs/adr/${id}-${name}.md`;
   }),

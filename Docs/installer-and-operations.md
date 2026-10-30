@@ -1,20 +1,42 @@
 # MicroDots — Installer and Operations
 
-**Status:** Specification for M1/M6
+**Status:** Native personal profile (P1) + optional Docker reference profile (M1A)
 **Audience:** Operators, infrastructure, agents
-**Related:** [`roadmap.md`](./roadmap.md) · [`technical-architecture.md`](./technical-architecture.md) · [`security-and-auth.md`](./security-and-auth.md)
+**Related:** [`roadmap.md`](./roadmap.md) · [`native-execution-and-resources.md`](./native-execution-and-resources.md) · [`technical-architecture.md`](./technical-architecture.md) · [`security-and-auth.md`](./security-and-auth.md)
 
 ---
 
 ## 1. Goal
 
-> One command on a fresh VPS produces a working, secure, upgradeable MicroDots installation — with no manual YAML, no dependency archaeology, and no destructive surprises on re-run.
+> Put a working, secure, resource-bounded MicroDots operator on a shared VPS without taking over the host — and leave a clean, inspectable system behind.
 
-The installer is a **product surface**, not a script. It is versioned, tested, idempotent, and explains every failure.
+There are two profiles:
+
+1. **Native personal profile (active):** systemd units, cgroups v2, the narrow `microdots-exec` helper, the existing reverse proxy, and an operator-owned budget. This is the default for the shared 4 GB / 1 vCPU host.
+2. **Docker reference profile (optional):** Compose + Caddy, preserved from M1A for portability and the deferred product track. It is not required and is not the default.
+
+The installer is a **product surface**, not a script. It is versioned, tested, idempotent, and explains every failure. The native profile may start as a documented operator runbook before it becomes a one-command installer.
 
 ---
 
-## 2. Supported environments (v0.1)
+## 2. Supported environments
+
+### 2.1 Native personal profile (active)
+
+| Item | Supported |
+|---|---|
+| OS | Ubuntu 22.04/24.04 LTS, Debian 12 (systemd + cgroups v2) |
+| Architecture | x86_64, arm64 |
+| CPU | 1 vCPU minimum for the personal profile; 2+ recommended |
+| RAM | 4 GB minimum **shared**; operator must reserve ≥ 1 GB for host/backends |
+| Disk | 20 GB minimum; 40 GB recommended |
+| Runtime | systemd 249+; cgroup v2 mounted; no Docker required |
+| Network | Outbound HTTPS; integrates with the existing proxy on an internal port |
+| Time | NTP synchronized (required for TLS and WebAuthn) |
+
+**Important:** 4 GB total is not 4 GB for MicroDots. The budget leaves a host reserve and runs only one heavy execution at a time. The installer/runbook must detect and report this rather than assume the whole host is available.
+
+### 2.2 Optional Docker profile
 
 | Item | Supported |
 |---|---|
@@ -27,7 +49,7 @@ The installer is a **product surface**, not a script. It is versioned, tested, i
 | Network | Outbound HTTPS; inbound 80/443 (or tunnel mode) |
 | Time | NTP synchronized (required for TLS and WebAuthn) |
 
-Explicitly unsupported in v0.1: Windows host, macOS host, Podman, rootless Docker, Kubernetes, Alpine host, 32-bit. Fail with a clear message rather than a broken install.
+Explicitly unsupported for the native profile: Windows host, macOS host, WSL without systemd, cgroup v1-only hosts, Kubernetes, Alpine host, 32-bit. Fail with a clear message rather than a broken install. Podman is an optional future runtime adapter, not a dependency.
 
 **Access modes**
 
@@ -44,7 +66,35 @@ Web push and passkeys require a secure context. Mode D is documented as limited,
 
 ## 3. Install
 
-### 3.1 Command
+### 3.0 Native personal profile (active)
+
+This is the target runbook for P1. It is deliberately explicit; a one-command installer comes after the runtime and cleanup tests are real.
+
+**Privilege model**
+
+- `microdots` system user runs the app/worker (unprivileged).
+- `microdots-exec` runs as root with a narrow Unix-socket API.
+- The execution unit runs as `microdots-worker`, never root.
+- The existing reverse proxy forwards to the app on an internal port.
+
+**Steps**
+
+1. Detect OS, arch, systemd version, cgroup v2, clock sync, disk, memory and current headroom.
+2. Detect the existing backends and what owns 80/443. Do not change the firewall or proxy without explicit confirmation.
+3. Create `/opt/microdots`, `/var/lib/microdots/{workspaces,artifacts}`, `/etc/microdots`, `/run/microdots` with least-privilege ownership.
+4. Install or reuse Postgres. Default: local Postgres; managed is an explicit external dependency with a direct connection for migrations and pg-boss.
+5. Generate secrets once: session secret, master key, setup token, VAPID keys; write `0600`; never overwrite existing material.
+6. Write the root-owned budget file (`/etc/microdots/budget.toml`) and validate it against the host reserve.
+7. Install the `microdots-exec` helper and its systemd unit; verify the socket permissions and peer-credential checks.
+8. Install app/worker systemd units; run migrations with an advisory lock at boot; bind the app to an internal port.
+9. Configure the existing proxy/TLS or a tunnel. Do not expose the app, Postgres, helper socket or execution ports publicly.
+10. Run a sample execution under a transient unit; verify cgroup limits, logs, usage, stop and cleanup.
+11. Print the URL and setup token once; write an install-state file without secrets.
+12. Run `microdots doctor` and a cleanup sweep.
+
+**Exit:** the host still has its reserve, MicroDots is reachable through the existing proxy, and the sample execution leaves no orphan.
+
+### 3.1 Optional Docker installer command
 
 ```bash
 curl -fsSL https://get.microdots.dev/install.sh -o install.sh
@@ -73,7 +123,9 @@ Both are documented. The script supports:
 --purge                    with --uninstall, delete data (explicit confirmation)
 ```
 
-### 3.2 What the installer does
+> §§3.2–3.4 describe the **optional Docker profile**. The native profile uses the runbook in §3.0 and the runtime in [`native-execution-and-resources.md`](./native-execution-and-resources.md). Secret generation, idempotency and fail-closed rules apply to both.
+
+### 3.2 What the Docker installer does
 
 1. Verify OS, architecture, kernel, clock sync, disk and memory.
 2. Verify it is not already installed; if it is, switch to **upgrade/repair** mode.
@@ -137,6 +189,32 @@ Used by `doctor`, `upgrade`, `uninstall`, and support. Never contains secrets.
 
 ## 4. Deployment topology
 
+### 4.1 Native personal profile (default)
+
+```text
+existing proxy ──► app (127.0.0.1:3000)
+                     │
+                     ├── Postgres (local socket or 127.0.0.1)
+                     ├── worker
+                     │     └── microdots-exec ──► transient systemd unit + cgroup
+                     └── shared browser (on demand)
+
+Files: /opt/microdots, /var/lib/microdots, /etc/microdots/budget.toml, /run/microdots
+Units: microdots-app, microdots-worker, microdots-exec, microdots-browser (on demand)
+```
+
+Data locations:
+
+| Path | Contents | Backup |
+|---|---|---|
+| Postgres data dir | All relational state, queue, events | Yes (`pg_dump`) |
+| `/var/lib/microdots/artifacts` | Task artifacts (content-addressed) | Yes |
+| `/var/lib/microdots/workspaces` | Project checkouts | No (re-clonable) |
+| `/etc/microdots` + `/data/secrets` | Budget, master key, setup token | Master key only with `--include-key`; setup token not backed up |
+| `/run/microdots` | Helper socket and run env | No |
+
+### 4.2 Optional Docker profile
+
 ```yaml
 services:
   caddy:      # 80/443, automatic TLS, headers, compression
@@ -161,7 +239,7 @@ Only `caddy` publishes ports. Postgres, runner and the app are on an internal ne
 
 Restart policies: `unless-stopped` for all. Healthchecks for `postgres`, `app`, `caddy`, `runner`.
 
-Resource limits (defaults, configurable):
+Native profile resource limits are **operator-owned profiles**, not per-service guesses; see [`native-execution-and-resources.md`](./native-execution-and-resources.md) §4. The optional Docker profile uses the following defaults:
 
 | Service | Memory | CPUs |
 |---|---|---|
@@ -205,7 +283,7 @@ command -v opencode
 opencode --version
 ```
 
-Also check known install locations (`~/.opencode/bin`, `/usr/local/bin`, the runner image) and the configured endpoint.
+Also check known install locations (`~/.opencode/bin`, `/usr/local/bin`, the optional Docker runner image) and the configured endpoint.
 
 ### 6.2 Decision matrix
 
@@ -234,7 +312,7 @@ The user-facing messages must be distinct:
 |---|---|
 | Missing | "No coding engine installed. Install OpenCode or connect another engine." |
 | Incompatible | "OpenCode 0.5.1 is below the supported range 0.6.x. Upgrade?" |
-| Unhealthy | "OpenCode is installed but not responding. Check the runner logs." |
+| Unhealthy | "OpenCode is installed but not responding. Check the execution logs." |
 | Provider auth | "OpenCode is running, but the model provider rejected the key." |
 | Quota | "The model provider quota is exhausted. Wait or switch providers." |
 
@@ -295,12 +373,12 @@ microdots upgrade --check    # no changes
 Sequence:
 
 1. Pre-flight: disk space, current health, backup (automatic unless `--no-backup`).
-2. Pull pinned images by digest.
-3. Stop worker (drain), stop app.
+2. Fetch pinned artifacts: native app/worker/helper binaries, or optional Docker images by digest.
+3. Stop worker (drain), stop app. Verify no active execution units before replacing binaries.
 4. Start app with migrations; wait for `/readyz`.
-5. Start worker and runner; health check.
-6. Smoke test: DB, queue, one queued fake task (or skip in production).
-7. Record `lastUpgrade` in state.
+5. Start the helper, app and worker (and the optional Docker services); health check.
+6. Smoke test: DB, queue, one fake runtime run and its cleanup (or skip in production).
+7. Record `lastUpgrade` in state; sweep orphan units.
 
 Rollback:
 
@@ -323,10 +401,14 @@ Runs a prioritized diagnostic and prints pass/warn/fail with fixes:
 | Check | Fail example |
 |---|---|
 | OS/arch | "Ubuntu 20.04 is not supported; upgrade to 22.04+" |
-| Docker/Compose | "Compose v2 not found" |
+| systemd/cgroups | "cgroup v2 not mounted; native runtime unavailable" |
+| Helper | "exec.socket permissions are 0666 (expected 0660 root:microdots)" |
+| Runtime | "1 orphan microdots-run unit; cleanup required" |
+| Budget | "MicroDots memory_max 3.2 GB exceeds host reserve" |
+| Docker/Compose (optional) | "Compose v2 not found" |
 | Clock sync | "Clock drift 42s — WebAuthn will fail" |
 | Disk | "1.8 GB free — below 5 GB safety margin" |
-| Memory | "3.2 GB total — 4 GB recommended for coding tasks" |
+| Memory | "3.2 GB total — 4 GB recommended; reserve not met" |
 | Ports | "443 already in use by nginx" |
 | DNS | "dots.example.com does not resolve to this host" |
 | TLS | "Certificate expires in 3 days; renewal failed" |
@@ -347,14 +429,18 @@ Exit code 0 = all pass, 1 = warnings, 2 = failures. Machine-readable with `--jso
 ```bash
 microdots logs app --follow
 microdots logs worker --since 1h
-microdots logs runner
+microdots logs run <runId>
 microdots logs db
 microdots support-bundle --out support.tar.gz
 ```
 
-The support bundle contains: versions, `doctor --json`, sanitized logs, compose config with secrets redacted, migration status, queue depth, engine health. It **never** contains prompts, task content, keys or tokens unless `--include-content` is explicitly passed.
+The support bundle contains: versions, `doctor --json`, sanitized logs, runtime/queue/cleanup state with secrets redacted, migration status, engine health. It **never** contains prompts, task content, keys or tokens unless `--include-content` is explicitly passed.
 
-Log rotation: Docker `json-file` with `max-size=20m`, `max-file=5`. App logs are structured JSON.
+Logging:
+
+- Native profile: journald for app/worker/helper/run units, with bounded retention and redaction.
+- Optional Docker profile: `json-file` with `max-size=20m`, `max-file=5`.
+- App logs are structured JSON; execution logs are size-capped and redacted.
 
 ---
 
@@ -364,7 +450,9 @@ Log rotation: Docker `json-file` with `max-size=20m`, `max-file=5`. App logs are
 microdots uninstall
 ```
 
-Default: stop and remove containers, networks, app files and images. **Keep** `pgdata`, `artifacts`, `secrets`, and `.env`; print their locations.
+Native profile default: stop/disable units, remove app files and runtime profiles, and sweep orphan units/temp dirs. **Keep** Postgres data, `artifacts`, `secrets`, budget and env; print their locations.
+
+Optional Docker profile default: stop and remove containers, networks, app files and images. **Keep** `pgdata`, `artifacts`, `secrets`, and `.env`; print their locations.
 
 ```bash
 microdots uninstall --purge
@@ -387,9 +475,10 @@ ufw allow 443/tcp
 ufw enable
 ```
 
-- Do not expose 3000, 5432, 4096, or the Docker socket.
-- Bind internal services to the Docker network only.
-- If using a tunnel, close 80/443 and let the tunnel connect to `app:3000`.
+- Do not expose 3000, 5432, the helper socket, execution units, or the Docker socket.
+- Native profile: bind app/Postgres to loopback or a Unix socket; the existing proxy is the only public listener.
+- Optional Docker profile: bind internal services to the Docker network only.
+- If using a tunnel, close 80/443 and let the tunnel connect to the internal app port.
 - SSH: key-only, non-root user, fail2ban recommended (documented, not enforced).
 - Outbound: allow 443; engine egress can be further restricted by the operator.
 
@@ -399,18 +488,19 @@ ufw enable
 
 | Workload | vCPU | RAM | Disk | Notes |
 |---|---|---|---|---|
-| Chat only, no coding | 1 | 2 GB | 20 GB | Demo only; the installer warns and does not treat this as supported |
-| Coding, 1 task at a time | 2 | 4 GB | 40 GB | **Recommended minimum** |
-| Coding + browser | 4 | 8 GB | 80 GB | Comfortable |
-| Team (3–5 users) | 4–8 | 8–16 GB | 120 GB | Concurrency raised |
+| Personal operator, shared host | 1 | 4 GB total, ≥ 1 GB reserve | 20–40 GB | **Current target**; one heavy execution, browser on demand |
+| Personal operator, dedicated host | 2 | 4 GB | 40 GB | Comfortable; raise budget after measurement |
+| Coding + browser concurrently | 4 | 8 GB | 80 GB | Not the default; explicit budget increase |
+| Team (3–5 users) | 4–8 | 8–16 GB | 120 GB | Deferred product track |
 
 Reality checks to communicate in the installer and docs:
 
-- A coding run can use 1–2 GB with Node + tests.
-- Browser automation adds ~500 MB per context.
+- A coding run can use 1–2 GB with Node + tests; the heavy profile caps it.
+- Browser automation adds ~500 MB–1 GB; it is a heavy execution and does not run with coding by default.
 - Postgres + app + worker idle ≈ 350–500 MB.
-- Two concurrent coding runs on 4 GB will swap; the default concurrency is 2 with a warning.
+- Two concurrent coding runs on 4 GB will swap; the default is one heavy execution.
 - Disk fills from `node_modules`, caches and artifacts; `microdots doctor` warns at 20% free.
+- The host reserve is not optional. MicroDots must queue or deny before it eats the backends.
 
 ---
 
@@ -423,9 +513,11 @@ Reality checks to communicate in the installer and docs:
 | Web push not delivered | No valid TLS, permission denied, expired subscription | Re-subscribe; check `doctor` |
 | "No engine" on coding task | Engine missing or disabled | Install/enable in Team → Engines |
 | Engine unhealthy after upgrade | Version outside range | `microdots upgrade --engine opencode` |
-| Tasks stuck queued | Worker down, capacity, or dependency | Check health, queue depth, logs |
-| Everything slow, disk full | Cache/artifacts | `docker system prune` guidance, artifact retention |
-| 502 from Caddy | App not ready | `microdots logs app`, `/readyz` |
+| Tasks stuck queued | Worker down, budget, capacity, or dependency | Check admission reason, queue depth, `doctor`, logs |
+| Everything slow, disk full | Cache/artifacts | Cleanup sweep, artifact retention, journal vacuum |
+| 502 from the proxy | App not ready | `microdots logs app`, `/readyz` |
+| Orphan `microdots-run-*` unit | Crash/restart | `microdots cleanup`, then `doctor` |
+| Execution killed at memory limit | Profile too small or task too large | Inspect usage, raise profile only with operator approval, or split task |
 | Migration failed | Interrupted upgrade | Restore pre-upgrade backup; report |
 | Can't log in after URL change | Cookies/passkeys bound to old origin | Revert URL or re-register passkey |
 
@@ -449,9 +541,10 @@ Each row exists in the public troubleshooting guide with exact commands.
 
 ## 16. Release artifacts
 
-- Multi-arch images: `ghcr.io/microdots/app:<version>` (API+worker), `ghcr.io/microdots/runner:<version>`.
-- `install.sh` + `SHA256SUMS` per release.
-- `compose.yaml` versioned with the release; overrides are site-local.
-- `microdots` CLI (shell shim over compose) shipped in the image and installed by the script.
+- Native tarball: app/worker/helper binaries, systemd unit templates, budget schema, upgrade/doctor scripts.
+- Optional multi-arch images: `ghcr.io/microdots/app:<version>` (API+worker), `ghcr.io/microdots/runner:<version>`.
+- `install.sh` + `SHA256SUMS` per release (native and optional Docker profiles).
+- `compose.yaml` (optional profile) versioned with the release; overrides are site-local.
+- `microdots` CLI (native commands, with an optional compose shim) installed by the script.
 - Changelog + upgrade notes + known issues.
 - SBOM (CycloneDX) attached to the release.

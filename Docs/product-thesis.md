@@ -1,7 +1,9 @@
 # MicroDots — Product Thesis
 
 **Status:** Working strategy document
-**Companion:** [`master-prd.md`](./master-prd.md) (requirements), [`roadmap.md`](./roadmap.md) (execution)
+**Companion:** [`master-prd.md`](./master-prd.md) (long-term requirements), [`roadmap.md`](./roadmap.md) (active personal-operator execution), [`product-roadmap.md`](./product-roadmap.md) (deferred product track)
+
+> **Current delivery mode (2026-10-30):** build a personal operator for one owner on a shared 4 GB / 1 vCPU VPS first. The open-source distribution/product surface described below remains the long-term thesis, but it is deferred. See [ADR-0013](./adr/0013-personal-operator-first.md).
 
 ---
 

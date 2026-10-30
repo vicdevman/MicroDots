@@ -45,6 +45,7 @@ These can evolve through versioned migrations and ADRs — but not through third
 
 | Family | Contract | Built-ins | Third-party |
 |---|---|---|---|
+| Execution runtime | `ExecutionRuntime` | native (systemd/cgroups), fake | docker, podman, custom |
 | Execution engine | `ExecutionEngine` | fake, opencode | cline, codex-cli, aider, custom |
 | Integration adapter | `IntegrationAdapter` | mcp, cli, vercel, github | any |
 | Model provider | AI SDK provider | openai-compatible, anthropic, google, ollama, openrouter | any compatible |
@@ -177,17 +178,48 @@ The bridge between the core and an engine is deliberately small and transport-ag
 
 | Step | Call | Rule |
 |---|---|---|
-| Launch | runtime starts container | Mount workspace only; inject `MICRODOTS_RUN_ID` and a one-time bridge token; no secrets |
+| Launch | `ExecutionRuntime.start(spec)` | Confine workspace; inject `MICRODOTS_RUN_ID` and a one-time bridge token; no secrets; enforce operator profile |
 | Handshake | `POST /v1/runs/:id/prepare` | Validates manifest `apiVersion`, version range, workspace root |
 | Heartbeat | `POST /v1/runs/:id/heartbeat` every 10 s | Three missed beats → run `interrupted`; recovery decides requeue or honest failure |
 | Boundary | `POST /v1/gateway` | Forwards to policy; may return `approval_pending` |
 | Approval | `GET /v1/approvals/:id` long-poll | Engine pauses; decision resumes or denies; never assumed |
 | Progress | `POST /v1/runs/:id/events` | Batched, size-capped, normalized |
-| Cancel | `POST /v1/runs/:id/cancel` | Engine must stop within 10 s or the container is killed; outcome records external effect |
+| Cancel | `POST /v1/runs/:id/cancel` | Engine must stop within 10 s or the runtime kills the whole cgroup; outcome records external effect |
 | Result | `POST /v1/runs/:id/result` | Persisted once; later calls are idempotent |
-| Teardown | container exit | Token invalidated; workspace diff captured before cleanup |
+| Teardown | runtime stop/cleanup | Token invalidated; workspace diff captured; verified cleanup |
 
 Sessions are **not required to be resumable**. The workspace and event log are the durable state; an engine restart re-runs from the base commit or fails honestly. A run that dies never reports `completed`.
+
+### 3.1.3 ExecutionRuntime
+
+The runtime is the only module that starts, limits and stops an execution process. It is selected by configuration, after policy and admission; the caller cannot request a different profile or bypass a limit.
+
+```ts
+interface ExecutionRuntime {
+  readonly kind: "native" | "docker" | "podman" | "fake";
+  health(): Promise<RuntimeHealth>;
+  prepare(spec: ExecutionSpec): Promise<PreparedExecution>;
+  start(prepared: PreparedExecution): Promise<RunningExecution>;
+  stop(runRef: ExecutionRef, opts: StopOptions): Promise<StopOutcome>;
+  kill(runRef: ExecutionRef): Promise<StopOutcome>;
+  logs(runRef: ExecutionRef, opts: LogOptions): Promise<LogChunk>;
+  usage(runRef: ExecutionRef): Promise<UsageSample>;
+  cleanup(runRef: ExecutionRef): Promise<CleanupResult>;
+  reconcile(): Promise<ReconcileResult>;
+}
+```
+
+Rules:
+
+- `ExecutionSpec.argv` is an array; no shell interpolation.
+- `workspace`/`cwd` are canonicalized and checked against the project root.
+- `profile` is the resolved operator profile; the runtime cannot raise it.
+- `env` contains run-scoped values only; secrets are injected inside a gateway adapter call.
+- Every outcome distinguishes `stopped`, `completed`, `failed`, `timed_out`, `unknown`.
+- Stop is idempotent; cleanup is retry-safe and verified.
+- A runtime that cannot enforce cleanup must fail the health check, not pretend.
+
+The native runtime is authoritative in [`native-execution-and-resources.md`](./native-execution-and-resources.md) §5. Docker/Podman adapters are optional and must pass the same contract harness.
 
 ### 3.2 Normalized engine events
 
@@ -321,14 +353,14 @@ Resolution order: explicit task pin → project default → worker binding strat
 
 ### 4.3 Multiple engines at once
 
-Supported from v0.2:
+Supported when the operator budget allows:
 
 - Different projects on different engines.
 - One project with a primary and a fallback.
 - Explicit "Run with…" per task.
-- Comparison runs (v0.4): the same objective on two engines requires isolated workspace copies and separate runs; it is not a property of a single task row.
+- Comparison runs (later): the same objective on two engines requires isolated workspace copies, separate runs and enough budget; it is not a property of a single task row.
 
-The only shared constraint is the workspace lock: one writer per project at a time. Read-only engines (research) are not affected.
+The shared constraints are the workspace lock (one writer per project at a time) and admission (one heavy execution by default). Read-only engines (research) still need budget, but do not take the workspace write lock.
 
 ---
 
@@ -340,8 +372,8 @@ This is the acceptance test for modularity. If any step requires editing orchest
    - `manifest`: capabilities `project.fs.read`, `project.fs.write`, `project.exec`, `project.git.read`; streaming true; cancellable true.
    - `health()`: binary/endpoint check + version.
    - `run()`: spawn headless Cline in the workspace, parse its event stream, map to normalized events, and route boundary requests through `ctx.gateway`.
-   - No raw secrets, DB access or direct egress; the runner profile has only the workspace mount and the bridge.
-2. Add a runner profile in `deploy/compose.yaml` (or point at a remote endpoint).
+   - No raw secrets, DB access or direct egress; the runtime profile has only the confined workspace and the bridge.
+2. Add a native runtime profile in `deploy/native/` (or point at a remote endpoint). Docker is optional.
 3. Register in `packages/engines/index.ts` (bundled) or via settings (external).
 4. Add `cline` to the coding worker binding — or let users select it in the UI.
 5. Run the contract test suite: health, start, stream, file change, approval, cancel, timeout, provider failure.
@@ -398,8 +430,8 @@ Modules are code and therefore a supply-chain risk.
 Rules:
 
 1. A module **declares** capabilities; the user **grants** them. Declaration is not permission.
-2. Every **boundary** capability call goes through the gateway and policy engine; sandbox-local effects are governed by the task's admission scope and the container.
-3. Modules run out-of-process where possible (engines in containers, MCP over stdio/HTTP).
+2. Every **boundary** capability call goes through the gateway and policy engine; sandbox-local effects are governed by the task's admission scope and the execution runtime.
+3. Modules run out-of-process where possible (engines in native units or containers, MCP over stdio/HTTP).
 4. In-process modules (UI cards, notification channels) get no secrets, no filesystem, no eval.
 5. No module can register a capability that shadows a core capability id.
 6. Secrets are resolved only inside the gateway/adapter for the duration of one call; never in config, prompts or logs, and never handed to an engine.
@@ -418,7 +450,7 @@ A bad module must degrade one capability, not the product.
 - **Bulkheads:** each module family has its own concurrency budget; a slow MCP server cannot starve coding runs.
 - **Fallback routing** only on declared transient errors, never on policy denials (a denial is not a reason to try another engine).
 - **Kill switch:** `MICRODOTS_DISABLED_MODULES` env for emergency isolation.
-- **Crash containment:** engines run in containers; adapter crashes are caught per-call.
+- **Crash containment:** engines run in isolated runtime units; adapter crashes are caught per-call.
 
 ---
 
@@ -478,11 +510,10 @@ If a future requirement demands one of these as a module, it needs an ADR and a 
 
 | Release | Module capability |
 |---|---|
-| v0.1 | Registry skeleton; fake + OpenCode engines; MCP contract defined but not exposed |
-| v0.2 | Cline engine; MCP adapters; skill bank; engine picker in UI |
-| v0.3 | Browser engine; notification channels (ntfy/Discord); S3 artifacts |
-| v0.4 | Comparison runs; engine routing UI; third-party adapter SDK |
-| v0.5 | Verified module registry with signing; per-module permissions UI |
-| v1.0 | Stable module API, deprecation policy, compatibility matrix |
+| P1 | Registry skeleton; native + fake runtimes |
+| P3–P4 | Adapter contract in use; OpenCode engine; engine picker in UI |
+| P5–P6 | Browser engine; notification channels; S3 artifacts; memory retrieval contract |
+| P7 | Docker/Podman runtimes; comparison runs; third-party adapter SDK |
+| Product track | Verified module registry with signing; per-module permissions UI; stable module API |
 
 The goal is not a marketplace for its own sake. It is that a user can keep using the engine, model and tools they already trust — and change their mind later without migrating their work.

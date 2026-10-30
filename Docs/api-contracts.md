@@ -1,6 +1,6 @@
 # MicroDots — API and Event Contracts
 
-**Status:** v1 draft (frozen at MVP)
+**Status:** v1 draft (frozen at the fast-path milestone)
 **Base URL:** `/api/v1`
 **Auth:** session cookie (browser) or bearer token (CLI/automation)
 **Related:** [`data-model.md`](./data-model.md) · [`security-and-auth.md`](./security-and-auth.md) · [`technical-architecture.md`](./technical-architecture.md)
@@ -201,8 +201,11 @@ Headers: `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`. Exceeding 
 | GET | `/healthz` | Liveness (no deps) |
 | GET | `/readyz` | Readiness (DB, queue, migrations) |
 | GET | `/api/v1/system/info` | Version, instance id, uptime, public URL |
-| GET | `/api/v1/system/health` | Rich health: db, queue, engines, providers, disk, memory |
-| GET | `/api/v1/system/modules` | Loaded engines/adapters/providers, versions, health, compatibility |
+| GET | `/api/v1/system/health` | Rich health: db, queue, engines, providers, disk, memory, runtime, cleanup |
+| GET | `/api/v1/system/resources` | Host metrics, PSI, operator budget, cgroup usage (P2) |
+| GET | `/api/v1/system/queue` | Active/queued jobs with admission reasons (P2) |
+| GET | `/api/v1/system/cleanup` | Last cleanup and orphan report (P2) |
+| GET | `/api/v1/system/modules` | Loaded engines/adapters/providers/runtimes, versions, health, compatibility |
 | GET | `/api/v1/system/audit` | Audit query (owner) |
 
 Example `system/health`:
@@ -217,6 +220,8 @@ Example `system/health`:
     { "id": "engine:opencode", "status": "ok", "version": "0.6.4" },
     { "id": "engine:cline", "status": "unhealthy", "message": "binary not found" },
     { "id": "provider:anthropic", "status": "ok" },
+    { "id": "runtime:native", "status": "ok", "units": 1, "orphans": 0 },
+    { "id": "cleanup:last", "status": "ok", "runId": "01J..." },
     { "id": "disk", "status": "warn", "freeGb": 2.1 }
   ]
 }
@@ -556,6 +561,58 @@ Passkey registration, authentication and listing use better-auth's `/api/auth/*`
 - Size is capped (default 100 MB). Larger outputs are truncated with a recorded note, not silently dropped.
 - `sha256` is returned so the client can verify integrity.
 
+### 5.17 Runtime and resources (planned P1/P2)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/runs/:id` | Run state, unit/cgroup ref, profile, timestamps |
+| GET | `/api/v1/runs/:id/usage` | Memory peak, CPU usage, PIDs, IO; measured vs estimate |
+| POST | `/api/v1/runs/:id/stop` | Request cancel; returns outcome and cleanup state |
+| POST | `/api/v1/system/cleanup` | Safe sweep; returns per-run cleanup results |
+| GET | `/api/v1/system/resources` | Host memory/CPU/PSI/disk/load + MicroDots budget usage |
+| GET | `/api/v1/system/queue` | Active/queued jobs, profile, age, stable queue reason |
+
+Rules:
+
+- Resource values are measured from the host/cgroup; estimates are labelled `measured: false`.
+- The API never returns a way to raise a profile or cgroup value.
+- Stop is idempotent; the response distinguishes `stopped`, `completed`, `timed_out`, `unknown`.
+- Cleanup is safe to retry and always records a result.
+- Only the owner may call system cleanup.
+
+Example `runs/:id/usage`:
+
+```json
+{
+  "runId": "01J...",
+  "profile": "heavy",
+  "memoryPeakBytes": 1457520640,
+  "cpuUsageUsec": 81234000,
+  "pidsPeak": 84,
+  "ioReadBytes": 0,
+  "ioWriteBytes": 1048576,
+  "measured": true
+}
+```
+
+### 5.18 Memory (planned P6)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/memory?q=...` | Search/retrieve with scope and citations |
+| POST | `/api/v1/memory` | Create an explicit memory with a source |
+| PATCH | `/api/v1/memory/:id` | Correct title/body/scope; audit |
+| DELETE | `/api/v1/memory/:id` | Forget (soft delete); removes from retrieval |
+| GET | `/api/v1/memory/:id/sources` | Provenance |
+| GET | `/api/v1/memory/export` | Owner export (JSONL) |
+
+Rules:
+
+- Memory is scoped and permission-filtered before retrieval.
+- Every result carries source citations; no citation, no result.
+- Retrieved content is returned as data, never instructions.
+- `pgvector` is an implementation detail; the API contract stays provider-agnostic.
+
 ---
 
 ## 6. Event vocabulary
@@ -565,7 +622,15 @@ Task events (`task_event.type`). Payloads are versioned and additive.
 | Type | Emitted when | Key data |
 |---|---|---|
 | `task.created` | Task row created | objective, workerRole, mode |
-| `task.queued` | Scheduler accepts it | priority, position? |
+| `task.queued` | Scheduler accepts it | priority, position?, reason |
+| `run.admitted` | Admission decision | profile, decision, reason, estimate |
+| `run.started` | Native unit starts | runId, unit, profile, engine |
+| `run.usage` | Usage sample | memoryPeak, cpuUsec, pidsPeak, measured |
+| `run.stopping` | Stop requested | mode, deadline |
+| `run.stopped` | Stop finished | outcome, externalEffect |
+| `run.cleanup` | Cleanup verified | status, checks |
+| `run.cleanup_failed` | Cleanup failed | status, detail, retryable |
+| `run.orphan_detected` | Reconciliation found an orphan | unit, reason, action |
 | `task.started` | Run starts | runId, engine |
 | `task.progress` | Worker milestone | message, percent?, phase |
 | `plan.updated` | Orchestrator/worker revises plan | steps[] |

@@ -1,14 +1,16 @@
 # MicroDots — Technical Architecture
 
-**Status:** Proposed — accepted for M0 unless superseded by an ADR
+**Status:** Active — native systemd default; Docker optional (ADR-0011)
 **Audience:** Backend, frontend, infrastructure, AI agents
-**Related:** [`data-model.md`](./data-model.md) · [`api-contracts.md`](./api-contracts.md) · [`security-and-auth.md`](./security-and-auth.md) · [`installer-and-operations.md`](./installer-and-operations.md) · [`adr/`](./adr/)
+**Related:** [`data-model.md`](./data-model.md) · [`api-contracts.md`](./api-contracts.md) · [`security-and-auth.md`](./security-and-auth.md) · [`installer-and-operations.md`](./installer-and-operations.md) · [`native-execution-and-resources.md`](./native-execution-and-resources.md) · [`adr/`](./adr/)
+
+> **Current default (2026-10-30):** MicroDots executes work through a native `ExecutionRuntime` backed by transient systemd units/scopes and cgroups v2. The app/worker are unprivileged; a narrow `microdots-exec` helper starts/stops units under operator-owned resource profiles. Docker Compose remains an **optional reference deployment**, not a prerequisite. The authoritative resource design is [`native-execution-and-resources.md`](./native-execution-and-resources.md). Sections below that describe containers are the optional Docker profile.
 
 ---
 
 ## 1. Architectural stance
 
-MicroDots is a **modular monolith plus isolated execution runners**, deployed as a single Docker Compose stack on one VPS.
+MicroDots is a **modular monolith plus isolated execution runtimes**, deployed natively under systemd on one VPS. Docker Compose is an optional portable profile.
 
 It is also **engine-agnostic by construction**: every capability that talks to the outside world — coding engines, model providers, integrations, notification channels, artifact storage — is a module behind a small, versioned contract. OpenCode is the first coding engine, not *the* architecture. Cline, Codex CLI, Aider, a custom HTTP agent, or several of them at once are all valid configurations without touching the orchestrator, task system, policy engine or UI.
 
@@ -40,35 +42,42 @@ What we explicitly refuse:
                          │              User (browser / PWA)         │
                          │  desktop · mobile · installed · push      │
                          └───────────────────┬──────────────────────┘
-                                             │ HTTPS (Caddy, auto TLS)
+                                             │ HTTPS
+                                             ▼
+                         Existing reverse proxy (nginx / Caddy / Traefik)
+                                             │ internal port
                                              ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                              MicroDots host (VPS)                             │
 │                                                                              │
 │  ┌──────────────────────────────┐        ┌─────────────────────────────────┐ │
-│  │  app  (Fastify, Node 22)     │        │  worker  (same image)           │ │
+│  │  app  (Fastify, Node 22)     │        │  worker  (same codebase)        │ │
 │  │  · REST /api/v1              │        │  · pg-boss consumers            │ │
 │  │  · SSE /api/v1/events        │        │  · orchestrator turns           │ │
-│  │  · auth (better-auth)        │        │  · task scheduler               │ │
+│  │  · auth (better-auth)        │        │  · scheduler + admission        │ │
 │  │  · static PWA (built assets) │        │  · engine + adapter host        │ │
-│  │  · policy + gateway          │        │  · recovery sweep               │ │
+│  │  · policy + gateway          │        │  · recovery + cleanup sweep     │ │
 │  └──────────────┬───────────────┘        └───────────────┬─────────────────┘ │
 │                 │                                        │                   │
 │                 ▼                                        ▼                   │
 │  ┌────────────────────────────────────────────────────────────────────────┐  │
-│  │                    PostgreSQL 17  (single source of truth)              │  │
+│  │        PostgreSQL 17  (single source of truth; local or managed)       │  │
 │  │   relational state · task events · audit · pg-boss queue · migrations  │  │
 │  └────────────────────────────────────────────────────────────────────────┘  │
 │                                                                              │
 │  ┌──────────────────────────────┐        ┌─────────────────────────────────┐ │
-│  │ runner pod                    │        │ caddy (TLS, proxy, headers)     │ │
-│  │ · engine containers:          │        │ · automatic certificates        │ │
-│  │   opencode / cline / other    │        │ · HTTP/2, compression, limits   │ │
-│  │ · non-root, workspace-only    │        └─────────────────────────────────┘ │
-│  │ · no docker socket            │                                            │
-│  │ · CPU/mem/time caps           │                                            │
-│  └──────────────┬───────────────┘                                            │
-│                 │ scoped network                                             │
+│  │ microdots-exec (root, narrow)│        │ shared browser (on demand)     │ │
+│  │ · typed start/stop/cleanup   │        │ · Chromium/Playwright           │ │
+│  │ · operator profiles only     │        │ · isolated contexts             │ │
+│  │ · Unix socket + peer creds   │        │ · no host display               │ │
+│  └──────────────┬───────────────┘        └─────────────────────────────────┘ │
+│                 │ systemd D-Bus / transient unit                              │
+│                 ▼                                                            │
+│  ┌────────────────────────────────────────────────────────────────────────┐  │
+│  │ transient microdots-run-<id> unit/scope + cgroup v2                    │  │
+│  │ engine process · confined workspace · memory/CPU/PID limits · logs     │  │
+│  └──────────────┬────────────────────────────────────────────────────────┘  │
+│                 │ allowlisted egress only through the gateway/proxy          │
 └─────────────────┼────────────────────────────────────────────────────────────┘
                   │
                   ▼
@@ -77,15 +86,17 @@ What we explicitly refuse:
 
 **Process model**
 
-| Process | Image | Responsibility | Scaling |
-|---|---|---|---|
-| `caddy` | `caddy:2-alpine` | TLS, reverse proxy, security headers, compression | 1 |
-| `app` | `microdots/app` | HTTP API, auth, SSE, static PWA, policy evaluation, task creation | 1 (stateless; could scale later) |
-| `worker` | `microdots/app` (`node dist/worker.js`) | Queue consumers, orchestrator runs, adapter execution, recovery | 1 per deployment; internal concurrency |
-| `runner` | `microdots/runner` | Isolated execution engines (OpenCode, Cline, …) + workspaces | 1 per engine profile; per-workspace lock |
-| `postgres` | `postgres:17-alpine` | State, queue, events | 1 |
+| Process | Responsibility | Scaling |
+|---|---|---|
+| Existing proxy | TLS, reverse proxy, security headers, compression | Host-owned |
+| `app` | HTTP API, auth, SSE, static PWA, policy evaluation, task creation | 1 |
+| `worker` | Queue consumers, orchestrator runs, scheduler/admission, adapter execution, recovery | 1; internal concurrency bounded by budget |
+| `microdots-exec` | Narrow privileged helper: start/stop transient units, usage, cleanup | 1 root-owned service |
+| execution unit | One engine/command in a cgroup and confined workspace | 1 heavy at a time by default |
+| shared browser | Chromium/Playwright, on demand, isolated contexts | 1 service |
+| Postgres | State, queue, events, audit | 1 local or managed |
 
-`app` and `worker` share one codebase and one image. This is intentional: the domain layer, policy engine and schemas must not drift between the process that decides and the process that executes.
+`app` and `worker` share one codebase. This is intentional: the domain layer, policy engine and schemas must not drift between the process that decides and the process that executes. They are not a container dependency; the optional Docker profile packages them into one image.
 
 ---
 
@@ -110,10 +121,12 @@ What we explicitly refuse:
 | Styling | Tailwind CSS + shadcn/ui (Radix) | 4 / latest | Tokens, accessible primitives, no lock-in | Free |
 | PWA | vite-plugin-pwa + Workbox | latest | Manifest, precache, offline shell, push | Free |
 | Realtime | Server-Sent Events (native) | — | One-way server→client is the requirement; simpler than WS; HTTP-friendly | Free |
-| Browser automation | Playwright (Chromium) | latest | Best-in-class, isolation, tracing | Free |
+| Browser automation | Playwright (Chromium), shared service | latest | One browser on demand, isolated contexts, human takeover | Free |
 | Coding engine | **Pluggable engines**: OpenCode (first), Cline, Codex CLI, Aider, custom | per-engine | Engine is replaceable and multiple can coexist; MicroDots owns task, workspace, policy and result | Free |
-| Reverse proxy | Caddy | 2.x | Automatic TLS, tiny config, single binary | Free |
-| Containers | Docker Engine + Compose v2 | 27+ | Universal VPS support | Free |
+| Execution runtime | **Native systemd transient units + cgroups v2** (default) | host | Per-run limits, logs, usage, verified cleanup; no Docker dependency | Free |
+| Privileged helper | `microdots-exec` (root, narrow API) | v1 | Starts/stops transient units without giving app/worker root | Free |
+| Reverse proxy | Existing host proxy (nginx/Caddy/Traefik); Caddy optional | host | Integrates with the shared host instead of squatting 80/443 | Free |
+| Containers (optional) | Docker Engine + Compose v2 | 27+ | Optional portable profile / future `ExecutionRuntime` adapter | Free |
 | Logging | pino | 9.x | Structured JSON, redaction, fast | Free |
 | Testing | Vitest, Playwright Test, Testcontainers | latest | Unit, e2e, real Postgres | Free |
 | Lint/format | Biome | 2.x | One fast tool; fewer configs | Free |
@@ -132,6 +145,7 @@ What we explicitly refuse:
 | NestJS | Decorator-heavy, more ceremony than a modular Fastify app needs. |
 | Prisma | Migration ergonomics and generated-client weight; Drizzle gives SQL control and shared types. |
 | Redis + BullMQ | A second stateful service for a single-VPS product. pg-boss meets durability requirements. |
+| Docker-only default | Adds a daemon/network layer and blast radius on a shared 1 vCPU host; native systemd/cgroups is the default. Docker remains optional. |
 | WebSockets | Bidirectional not needed for v1; SSE reconnects and proxy behavior are simpler. Live browser view may add a WS channel later, scoped to that feature. |
 | MongoDB | Relational task/approval/audit semantics are the core of the product. |
 | LangChain / graph frameworks | Opaque control flow, hard to test, easy to over-abstract. We need explicit state machines and a small orchestration loop. |
@@ -153,7 +167,8 @@ microdots/
 │  │  │  ├─ api/               # routes, plugins, serializers
 │  │  │  ├─ auth/              # better-auth config, setup-token, guards
 │  │  │  ├─ domain/            # tasks, approvals, policy orchestration (pure)
-│  │  │  ├─ runtime/           # queue consumers, scheduler, recovery, module registry
+│  │  │  ├─ runtime/           # queue consumers, scheduler/admission, recovery, runtime + module registry
+│  │  │  │  └─ native/         # native ExecutionRuntime adapter (planned P1)
 │  │  │  ├─ infra/             # db, queue, secrets, storage, mail, push
 │  │  │  ├─ http/              # server bootstrap, plugins, error mapping
 │  │  │  ├─ worker.ts          # worker process entry
@@ -175,15 +190,17 @@ microdots/
 │  ├─ policy/                  # capability model, rule evaluation, tests
 │  ├─ engines/                 # engine contract, registry, concrete engines
 │  ├─ adapters/                # integration contracts + MCP/CLI/browser adapters
+│  ├─ avatars/                 # agent avatars: SVG morph engine + web component
 │  ├─ ai/                      # model providers, prompts, planner, summarizer
 │  ├─ ui/                      # design system (web now, RN tokens later)
 │  └─ config/                  # env schema, constants, feature flags, compat ranges
 ├─ deploy/
-│  ├─ compose.yaml
+│  ├─ native/                  # systemd units, microdots-exec helper, budget profiles (planned P1)
+│  ├─ compose.yaml             # optional Docker reference profile
 │  ├─ compose.dev.yaml
-│  ├─ caddy/Caddyfile
-│  ├─ docker/                  # Dockerfiles (app, runner)
-│  ├─ install.sh
+│  ├─ caddy/Caddyfile          # optional Docker profile
+│  ├─ docker/                  # optional Dockerfiles (app, runner)
+│  ├─ install.sh               # optional Docker installer / deferred product track
 │  └─ scripts/                 # backup, restore, upgrade, doctor, uninstall
 ├─ skills/                     # bundled skill bank (markdown + manifests)
 ├─ tests/e2e/                  # cross-process Playwright tests
@@ -201,8 +218,9 @@ packages/domain  →  contracts, policy
 packages/db      →  contracts
 packages/engines →  contracts, config        (never domain, db, policy or api)
 packages/adapters→  contracts, config
+packages/avatars →  (none; apps/web may import it, it imports no other package)
 apps/server      →  all packages
-apps/web         →  contracts, ui  (never db or domain internals)
+apps/web         →  contracts, ui, avatars  (never db or domain internals)
 ```
 
 A package must not import from an app. `domain` and `policy` must not import I/O (no `fs`, no `fetch`, no db client). This is what makes them testable and portable.
@@ -262,32 +280,38 @@ Adapters never receive a database handle or the policy engine. They receive a va
 ### 5.5 Runtime (`apps/server/src/runtime`)
 
 - **Scheduler:** finds `queued` tasks with satisfied dependencies and free capacity, enqueues runs.
+- **Admission:** checks the operator budget, host reserve, cgroup usage and profile before a run starts.
 - **Consumers:** pg-boss handlers for `task.run`, `task.resume`, `task.reconcile`, `notification.send`, `maintenance.sweep`.
-- **Recovery sweeper:** on boot and every 60s, detects stale heartbeats, requeues or fails honestly.
-- **Capacity:** enforces concurrency from config and live resource signals.
+- **Recovery sweeper:** on boot and every 60s, detects stale heartbeats, requeues or fails honestly; reconciles orphan runtime units.
+- **Capacity:** enforces one heavy execution by default and live resource signals.
+- **Execution runtime:** resolves `ExecutionRuntime`, never calls systemd/Docker directly.
 - **Budget guard:** checks token/cost before each model call, halts on breach.
 
 ### 5.6 Engines and adapters (`packages/engines`, `packages/adapters`)
 
-Two module families, one gateway:
+Three module families, one gateway:
 
 - **Engines** perform work in a workspace (coding, research, browser, custom).
 - **Adapters** connect to external systems (MCP servers, CLIs, APIs, notification channels, storage).
+- **Execution runtimes** start/stop/limit a process (native systemd, Docker, Podman, fake).
 
-Both implement versioned contracts (see §8, §9) and are resolved from a registry in `apps/server/src/runtime`, never imported directly by domain code.
+All implement versioned contracts (see §8, §9) and are resolved from a registry in `apps/server/src/runtime`, never imported directly by domain code.
 
 | Module | Family | Status | Purpose |
 |---|---|---|---|
-| `fake` | engine | M2 | Deterministic worker for durability testing |
-| `opencode` | engine | M5 | Coding (reference engine) |
-| `cline` | engine | v0.2 | Alternative coding engine |
-| `codex-cli` / `aider` | engine | community/v0.3 | Alternative coding engines |
-| `research` | engine | M7 | Web research with citations |
-| `browser` | engine | M8 | Playwright automation |
-| `mcp` | adapter | M7 | External tool servers |
-| `cli` | adapter | M9 | Allowlisted commands |
-| `vercel` | adapter | M9 | Deployment reference integration |
-| `web-push` / `smtp` | adapter | M6 | Notification channels |
+| `fake` | engine | P1 | Deterministic worker for durability testing |
+| `opencode` | engine | P4 | Coding (reference engine) |
+| `cline` | engine | later | Alternative coding engine |
+| `codex-cli` / `aider` | engine | later | Alternative coding engines |
+| `research` | engine | P5+ | Web research with citations |
+| `browser` | engine | P5 | Playwright automation |
+| `mcp` | adapter | P3+ | External tool servers |
+| `cli` | adapter | P3+ | Allowlisted commands |
+| `vercel` | adapter | P3/P7 | Deployment reference integration |
+| `web-push` / `smtp` | adapter | P3+ | Notification channels |
+| `native` | runtime | P1 | systemd transient unit + cgroup v2 (default) |
+| `docker` / `podman` | runtime | P7 | Optional portable runtimes |
+| `fake` | runtime | P1 | Contract/cleanup tests |
 
 Adapters and engines are registered in a manifest with: id, capabilities, input schemas, health check, version and required configuration.
 
@@ -325,17 +349,20 @@ Why queue the turn: the HTTP request must return promptly (`§24.3`), retries mu
 
 ```text
 scheduler tick
-  ├─ select queued tasks: deps complete, capacity available, budget ok
+  ├─ select queued tasks: deps complete, admission current
+  ├─ resolve workload profile + estimate; allow | queue | deny | downgrade
   ├─ create worker_run (attempt N), set task running
   └─ enqueue task.run { runId }  (singleton per run, idempotency key = runId)
 
 consumer task.run
   ├─ load task + scope + worker + project + grants
   ├─ build context bundle (no raw secrets)
-  ├─ engine.run(input, { signal, emit, gateway })     (engine resolved after policy)
+  ├─ resolve engine + ExecutionRuntime after policy/admission
+  ├─ runtime.start(spec) → transient unit / cgroup
+  ├─ engine.run(input, { signal, emit, gateway, runtime })
   ├─ on boundary call → gateway → policy/approval → adapter
   ├─ on approval needed → status waiting_approval, persist, release job
-  └─ on finish → validate result → write artifacts → verified status → event
+  ├─ on finish/stop → capture logs/usage → cleanup → verified status → event
 ```
 
 Long tasks do not hold a database transaction open. Progress is committed in small writes.
@@ -369,7 +396,7 @@ GET /api/v1/events?scope=task:<id>&after=<seq>
   → on disconnect, client reconnects with Last-Event-ID
 ```
 
-Cross-process delivery is **not** an in-process bus: the worker runs in a different container. The writer commits the event row, then issues `pg_notify('microdots_events', { taskId, globalSeq })` in the same transaction. The API holds one dedicated listener connection, fans out to SSE clients, and re-checks authorization per connection.
+Cross-process delivery is **not** an in-process bus: the worker runs as a separate process/unit. The writer commits the event row, then issues `pg_notify('microdots_events', { taskId, globalSeq })` in the same transaction. The API holds one dedicated listener connection, fans out to SSE clients, and re-checks authorization per connection.
 
 If the listener connection drops, the API polls `task_event` by `global_seq` every second until caught up, then re-subscribes. Notifications carry **IDs only** (Postgres payload limit); the row is always read from the table, so a missed notification is recoverable and replay remains authoritative.
 
@@ -399,23 +426,31 @@ On boot:
 
 ## 7. Concurrency and resource model
 
+The operator owns the budget. These are starting values for a 4 GB / 1 vCPU shared host; P1/P2 replace them with measurements.
+
 | Resource | Default | Config |
 |---|---|---|
-| Worker process concurrency | 2 | `MICRODOTS_WORKER_CONCURRENCY` |
+| Host reserve | ≥ 1 GB RAM + 0.15 CPU | `/etc/microdots/budget.toml` (root) |
+| MicroDots memory ceiling | 2 GB | budget file / helper |
+| MicroDots CPU ceiling | 0.85 vCPU | budget file / helper |
+| Heavy executions | 1 | admission |
+| Worker process concurrency | 1 | `MICRODOTS_WORKER_CONCURRENCY` |
 | Coding runs per workspace | 1 (mutex) | fixed |
 | Browser contexts | 1 | `MICRODOTS_BROWSER_CONCURRENCY` |
-| Orchestrator turns | 2 | internal |
-| Runner memory | 2 GB | `MICRODOTS_RUNNER_MEMORY` |
-| Runner CPUs | 1.5 | `MICRODOTS_RUNNER_CPUS` |
+| Orchestrator turns | 1–2 | internal |
+| Execution memory | profile (`light`/`standard`/`heavy`/`browser`) | helper-enforced cgroup |
+| Execution CPU | profile | helper-enforced cgroup |
 | Task timeout | 30 min | per task / `MICRODOTS_TASK_TIMEOUT_MS` |
-| Task model budget | $2 | per task / settings |
+| Task model budget | operator-set | settings |
 | SSE connections per user | 5 | fixed |
 
 Backpressure rules:
 
-- When queue depth > 50 or free memory < 400 MB, the scheduler stops dequeuing and the UI shows "queued — server busy".
+- When free host memory < reserve, or PSI memory stall is high, the scheduler stops dequeuing heavy work.
+- When queue depth > 50, new heavy tasks are rejected with `RESOURCE_QUEUE_FULL`.
 - Priority: user-initiated > retries > maintenance.
 - One workspace, one writer. Parallel tasks on the same repo are serialized by a DB advisory lock keyed on `projectId`.
+- Admission decisions are durable and re-checked before start; a stale allow cannot start after the budget changes.
 
 ---
 
@@ -435,14 +470,14 @@ A coding engine must edit files and run commands. Requiring a gateway round-trip
 
 | Class | Examples | Authorized by | Enforced by |
 |---|---|---|---|
-| **Sandbox-local** | read/write workspace files, run build/test commands, create a local branch | Task admission: `project.fs.read/write` and `project.exec` grants + operating mode | Container mount, non-root user, read-only rootfs, no network, no host mounts, CPU/memory/time limits; diff and command log captured |
-| **Boundary-crossing** | git push/fetch, network egress, secret injection, deploy, external APIs, host actions | Every call through the gateway; approval when risk/mode requires | Runner has no route or credential to perform it directly; only the task capability bridge can |
+| **Sandbox-local** | read/write workspace files, run build/test commands, create a local branch | Task admission: `project.fs.read/write` and `project.exec` grants + operating mode | Native cgroup/unit: non-root, confined workspace, `ProtectSystem`/`ProtectHome`, no network, CPU/memory/PID limits; diff and command log captured |
+| **Boundary-crossing** | git push/fetch, network egress, secret injection, deploy, external APIs, host actions | Every call through the gateway; approval when risk/mode requires | Execution unit has no route or credential to perform it directly; only the task capability bridge can |
 
 The engine gets no ambient authority beyond the workspace. It cannot push because it has no credential and no egress; it must call `ctx.gateway.request(...)`. That makes "all boundary-crossing effects pass through the gateway" an enforceable property rather than a convention.
 
 Inside the sandbox the engine has **delegated, bounded authority**, and the diff makes it reviewable. The product accepts that a coding agent may write any file inside the workspace it was granted. That is why the workspace is isolated, the task scope is explicit, and the resulting diff is evidence rather than a surprise.
 
-A command that genuinely needs the network (`project.exec.network`) is a boundary call: the gateway authorizes it, the runtime starts a one-shot network-enabled sandbox attached to an egress proxy with a per-command allowlist, and the long-lived engine sandbox stays network-off. See `security-and-auth.md` §8.3.
+A command that genuinely needs the network (`project.exec.network`) is a boundary call: the gateway authorizes it, the runtime starts a one-shot network-enabled execution profile attached to an egress proxy with a per-command allowlist, and the long-lived engine unit stays network-off. See `security-and-auth.md` §8.3 and [`native-execution-and-resources.md`](./native-execution-and-resources.md) §5.
 
 ### 8.2 Engine contract
 
@@ -475,7 +510,7 @@ interface EngineManifest {
 
 interface EngineContext {
   runId: string;
-  workspace: WorkspaceHandle;        // confined to the mounted project root
+  workspace: WorkspaceHandle;        // confined to the run's project root
   emit(event: EngineEvent): void;    // normalized, sandbox-local observability
   gateway: {
     request<T>(req: BoundaryRequest): Promise<GatewayOutcome<T>>;
@@ -506,8 +541,8 @@ A `BoundaryRequest` carries `capability`, `resource`, validated `input`, and a h
 | `pinned` | Task explicitly selects an engine | "Run with Cline" in UI |
 
 - The orchestrator selects a **worker role** (e.g. `coding`). Engine resolution happens in the runtime **after** policy evaluation, so engine choice can never expand permissions.
-- Multiple engines can run concurrently on different tasks. A single workspace still has one writer, enforced by a Postgres advisory lock on `projectId`.
-- Comparison runs (same objective, two engines, diff results) are a v0.4 design item. They require isolated workspace copies and separate runs; v1 does not claim schema support for them.
+- Multiple engines may be installed, but concurrency is bounded by the operator budget. A single workspace still has one writer, enforced by a Postgres advisory lock on `projectId`.
+- Comparison runs (same objective, two engines, diff results) are a later design item. They require isolated workspace copies, separate runs and enough budget; the fast path does not claim schema support for them.
 
 ### 8.4 What engines never own
 
@@ -566,10 +601,11 @@ This distinction is required by `OPC-010` and `AC-009`, and applies identically 
 
 ## 9. Module, engine, adapter and tool contracts
 
-Every seam in the system has a contract. There are five module families:
+Every seam in the system has a contract. There are six module families:
 
 | Family | Contract | Examples | Swappable at |
 |---|---|---|---|
+| Execution runtime | `ExecutionRuntime` | native systemd/cgroups, Docker, Podman, fake | Runtime/config |
 | Execution engine | `ExecutionEngine` | OpenCode, Cline, Aider, custom | Runtime, per worker binding |
 | Integration adapter | `IntegrationAdapter` | MCP, CLI, Vercel, GitHub, SMTP | Runtime, per integration |
 | Model provider | AI SDK provider interface | OpenAI, Anthropic, Google, Ollama, OpenRouter | Runtime, per worker/model |
@@ -611,7 +647,7 @@ Rules:
 1. Implement `ExecutionEngine` in `packages/engines/<id>`: manifest, health, run, cancel.
 2. Map the engine's native events to normalized events (`engine.progress`, `file.changed`, `command.finished`).
 3. Declare capabilities and the supported version range in the manifest.
-4. Add a container/profile in `deploy/` if the engine needs its own runtime.
+4. Add a native runtime profile/unit in `deploy/native/` if the engine needs its own runtime; Docker profiles are optional.
 5. Register it; add it to `engine_bindings` for the relevant worker role.
 6. Add contract tests against the shared engine test harness (health, streaming, cancel, timeout, error mapping).
 7. Update the installer matrix and the UI engine picker.
@@ -662,16 +698,19 @@ All configuration is environment-based, validated at boot by `packages/config` (
 | `MICRODOTS_MASTER_KEY_FILE` | `/data/secrets/master.key` | 32-byte key for secret encryption |
 | `MICRODOTS_SESSION_SECRET` | generated | better-auth signing |
 | `MICRODOTS_SETUP_TOKEN_FILE` | `/data/secrets/setup-token` | First-run claim |
-| `MICRODOTS_WORKSPACE_ROOT` | `/workspaces` | Project checkouts |
-| `MICRODOTS_ARTIFACT_ROOT` | `/data/artifacts` | Content-addressed artifacts |
-| `MICRODOTS_WORKER_CONCURRENCY` | `2` | |
+| `MICRODOTS_WORKSPACE_ROOT` | `/var/lib/microdots/workspaces` | Project checkouts |
+| `MICRODOTS_ARTIFACT_ROOT` | `/var/lib/microdots/artifacts` | Content-addressed artifacts |
+| `MICRODOTS_RUNTIME` | `native` | `native` \| `docker` \| `podman` \| `fake` |
+| `MICRODOTS_BUDGET_FILE` | `/etc/microdots/budget.toml` | Root-owned operator budget |
+| `MICRODOTS_EXEC_SOCKET` | `/run/microdots/exec.sock` | Narrow helper socket |
+| `MICRODOTS_WORKER_CONCURRENCY` | `1` | |
 | `MICRODOTS_TASK_TIMEOUT_MS` | `1800000` | |
 | `MICRODOTS_DEFAULT_MODE` | `balanced` | |
 | `MICRODOTS_VAPID_PUBLIC_KEY` / `_PRIVATE_KEY` | generated | Web push |
 | `MICRODOTS_LOG_LEVEL` | `info` | |
 | `MICRODOTS_TELEMETRY` | `off` | Never on by default |
 
-Secrets are never exposed through `/api` and never logged. See `security-and-auth.md` §7. Engine endpoints and tokens are **not** core environment variables; they live in the engine registration record (encrypted at rest) and are injected into that engine's runner session.
+Secrets are never exposed through `/api` and never logged. See `security-and-auth.md` §7. Engine endpoints and tokens are **not** core environment variables; they live in the engine registration record (encrypted at rest) and are injected into that engine's execution session.
 
 ---
 
@@ -681,7 +720,9 @@ Secrets are never exposed through `/api` and never logged. See `security-and-aut
 - **Health:**
   - `GET /healthz` — process alive (no dependencies).
   - `GET /readyz` — DB reachable, queue responsive, migrations applied.
-  - `GET /api/v1/system/health` — rich, authenticated: DB, queue depth, workers, provider, OpenCode, disk, memory, version.
+  - `GET /api/v1/system/health` — rich, authenticated: DB, queue depth, workers, provider, OpenCode, disk, memory, runtime units, cleanup, version.
+  - `GET /api/v1/system/resources` — host metrics, PSI, operator budget, cgroup usage.
+  - `GET /api/v1/system/queue` — active/queued jobs with admission reasons.
 - **Audit:** append-only `audit_log` for every policy decision, approval, credential use, config change, login, permission change.
 - **Metrics:** counters and histograms exposed at `/metrics` behind auth (Prometheus format) from v0.2; in-app charts later.
 - **Tracing:** request ID propagates API → queue job → adapter; OpenTelemetry optional later, never required.
@@ -701,8 +742,10 @@ Secrets are never exposed through `/api` and never logged. See `security-and-aut
 | Recovery sweep detection | < 60 s |
 | Memory (app + worker idle) | < 400 MB combined |
 | Disk per install (no workspaces) | < 1.5 GB |
+| Heavy execution memory | within its cgroup profile; never above the MicroDots budget |
+| Cleanup after terminal task | no unit/process/temp/lock/browser orphan; result durable |
 
-Budgets are checked in CI where measurable (bundle size, build time) and in the M6 performance pass.
+Budgets are checked in CI where measurable (bundle size, build time) and in the P2 resource pass.
 
 ---
 
@@ -710,12 +753,13 @@ Budgets are checked in CI where measurable (bundle size, build time) and in the 
 
 | Stage | Change | Trigger |
 |---|---|---|
-| 1 VPS (default) | nothing | — |
-| Bigger VPS | raise concurrency, runner limits | queue wait > 5 min regularly |
-| Separate worker host | move `worker` + `runner`, same DB | CPU saturation on app host |
-| Managed Postgres | swap `DATABASE_URL`, disable bundled db | durability/compliance needs |
+| 1 VPS native (default) | nothing | — |
+| Bigger VPS | raise operator budget/profiles and heavy concurrency | queue wait > 5 min regularly |
+| Separate worker host | move `worker` + execution runtime, same DB | CPU saturation on app host |
+| Managed Postgres | swap direct `DATABASE_URL`, keep migrations/pg-boss direct | durability/compliance needs |
 | Object storage | artifact adapter → S3-compatible | artifacts > 20 GB |
-| Multiple app replicas | stateless API behind Caddy; SSE via DB polling fallback | > 50 concurrent users |
+| Docker/Podman runtime | add an `ExecutionRuntime` adapter | portability need, not default |
+| Multiple app replicas | stateless API behind proxy; SSE via DB polling fallback | > 50 concurrent users |
 | Hosted relay | outbound tunnel for push/remote access | users behind CGNAT |
 
 Each step is an adapter or config change, not an architecture change. That is the test of the design.
@@ -736,9 +780,12 @@ These must remain true in every PR:
 8. Secrets never reach the client or logs.
 9. Closing the client cannot stop server work.
 10. A restart cannot silently mark unverified work as complete.
-11. Adding an engine, worker, tool, skill or UI card does not modify the orchestrator core — or any other engine.
+11. Adding an engine, runtime, worker, tool, skill or UI card does not modify the orchestrator core — or any other module.
 12. One Postgres is the only required stateful dependency.
 13. No engine is required for the product to start; coding capability degrades gracefully and explicitly.
-14. Engine selection happens after policy evaluation and cannot change the effective permissions of a task.
+14. Engine and runtime selection happen after policy/admission and cannot change effective permissions or resources.
+15. The operator owns the resource budget; the agent cannot raise it.
+16. App/worker are unprivileged; only the narrow helper starts/stops execution units.
+17. Cleanup is verified; a failed cleanup is visible and retryable.
 
 If a change violates one of these, it needs an ADR and explicit approval — not a workaround.

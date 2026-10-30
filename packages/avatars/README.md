@@ -22,6 +22,21 @@ and the avatar **is** the live status indicator — the morph between states is
 driven by task/agent events the backend already emits. No images are served;
 the avatar is vector, reactive and costs zero network.
 
+## Product placement
+
+| Item | Decision |
+|---|---|
+| Active phase | **P4 — OpenCode and agent presence** |
+| Surfaces | Task card, task detail header, agent/team roster |
+| State source | Backend task/run events; never a client-side guess |
+| Data exposure | Identity and state only; no task content, secrets or capabilities |
+| Customization UI | Later; the fast path uses the per-agent defaults + initials fallback |
+| Core dependency | None; this package imports nothing and the core never imports it |
+
+See [`Docs/roadmap.md`](../../Docs/roadmap.md) §8 and
+[`Docs/ux-spec.md`](../../Docs/ux-spec.md) §4.11. The package is built and
+tested; wiring is the P4 story, not a new engine or runtime dependency.
+
 ## Where things live (the map)
 
 | Layer | Path | What it is |
@@ -106,7 +121,7 @@ An agent record carries its avatar config — three discriminant values, no
 colours in DB that `skins.ts` could rename (`treat persist ids as data`):
 
 ```jsonc
-// agents.avatar (Drizzle/jsonb — schema decision lands in M2 data-model work)
+// agents.avatar (Drizzle/jsonb — schema decision lands in P4 data-model work)
 {
   "shape": "cube",        // SHAPE_BY_ID key  (8 choices)
   "color": "miel",        // COLOR_BY_ID key  (12 choices)

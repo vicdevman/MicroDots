@@ -29,27 +29,32 @@ Therefore:
 |---|---|
 | Model API keys, Git tokens, deployment credentials | Direct financial and infrastructure access |
 | Source code and repositories | IP, secrets accidentally committed, supply chain |
-| Host filesystem and Docker socket | Full server compromise |
+| Host filesystem, systemd/Docker control | Full server compromise |
 | Task/approval/audit records | Integrity of the product's promise |
 | Session cookies and passkeys | Account takeover |
 | Outbound network | SSRF, data exfiltration |
 
 ```text
-Browser  ──HTTPS──►  Caddy  ──►  app (trusted core)
-                                   │
-                                   ├──► Postgres (internal only)
-                                   ├──► worker (trusted core logic)
-                                   │       │
-                                   │       └──► gateway (policy) ──► engine/adapters (semi-trusted)
-                                   │                                      │
-                                   │                                      └──► workspace (untrusted content)
-                                   └──► SSE
+Browser  ──HTTPS──►  existing proxy  ──►  app (trusted core)
+                                            │
+                                            ├──► Postgres (internal only)
+                                            ├──► worker (trusted core logic)
+                                            │       │
+                                            │       └──► gateway (policy) ──► engine/adapters (semi-trusted)
+                                            │                                      │
+                                            │                                      └──► workspace (untrusted content)
+                                            │
+                                            └──► SSE
 
-Untrusted: repo contents, web pages, MCP outputs, engine output, skills from outside, user-supplied files.
-Trusted: core code, policy engine, database, secrets service.
+app/worker (unprivileged) ──Unix socket──► microdots-exec (root, narrow)
+                                                │
+                                                └──► transient systemd unit + cgroup (semi-trusted)
 ```
 
-The **runner** is a semi-trusted zone: it executes model-driven actions but has no database, no host mount except its workspace, no Docker socket, and no long-lived credentials.
+Untrusted: repo contents, web pages, MCP outputs, engine output, skills from outside, user-supplied files.
+Trusted: core code, policy engine, database, secrets service, the narrow helper's validation logic.
+
+The **execution unit** is a semi-trusted zone: it executes model-driven actions but has no database, no host mount except its confined workspace, no systemd/Docker control, and no long-lived credentials. The **helper** is privileged but deliberately narrow: it validates typed requests, applies operator profiles, and never exposes arbitrary shell or systemd control.
 
 ---
 
@@ -60,7 +65,7 @@ The **runner** is a semi-trusted zone: it executes model-driven actions but has 
 | T1 | Worker performs destructive action without consent | Data loss, deployment outage | Gateway + risk classes + approvals; deny-by-default | `SEC-001…004` |
 | T2 | Prompt injection via repo/web/MCP | Exfiltration, policy bypass | Content-as-data framing; tool allowlists; policy outside model; egress control | `SEC-007`, `BRW-005` |
 | T3 | Secret exfiltration to model or client | Credential compromise | Gateway-injected secrets; never in prompts/logs/client; redaction | `SEC-005` |
-| T4 | Container escape | Full VPS compromise | Non-root, no socket, dropped caps, read-only root, seccomp, limits | `SEC-002` |
+| T4 | Sandbox escape (native unit or container) | Full VPS compromise | Non-root, confined workspace, dropped caps, protected system/home, no control socket, cgroup limits | `SEC-002` |
 | T5 | Session theft / CSRF | Account takeover | HttpOnly/Secure/SameSite, origin checks, passkeys, rotation, device revoke | §4 |
 | T6 | Malicious skill or MCP server | Privilege escalation | Trust tiers, declared capabilities, explicit grants, quarantine | `SKL-004`, §8 |
 | T7 | Path traversal in workspace | Read/write outside project | Canonical path checks, mount confinement, symlink resolution | `SEC-002` |
@@ -70,7 +75,9 @@ The **runner** is a semi-trusted zone: it executes model-driven actions but has 
 | T11 | Supply-chain compromise | Backdoor | Lockfiles, pinned images, dependency audit, signed releases | §10 |
 | T12 | Resource exhaustion / cost runaway | DoS, bill shock | Concurrency caps, timeouts, budgets, queue backpressure | §9 |
 | T13 | Audit tampering | Lost accountability | Append-only table, no cascading deletes, export | §11 |
-| T14 | Installer hijack | Root compromise at install | HTTPS + checksum, no curl-pipe without verification option, pinned images | §12 |
+| T14 | Installer hijack | Root compromise at install | HTTPS + checksum, no curl-pipe without verification option, pinned artifacts | §12 |
+| T15 | Privileged helper abuse | Root compromise | Narrow typed API, peer credentials, profile allowlist, path/argv validation, no generic systemctl, audit | §8.1 |
+| T16 | Browser data exfiltration | Account/data compromise | Shared service, isolated contexts, no host display, egress allowlist, quarantined downloads, human takeover | `BRW-005`, §8.4 |
 
 Review this table at every milestone and after any incident.
 
@@ -195,7 +202,7 @@ Authorization is evaluated at two moments, not for every file write:
 | **Sandbox-local** | Once, at task admission, against the task's grants and mode | read/write workspace files, run build/test commands, create a local branch |
 | **Boundary-crossing** | Per call, through the gateway, with approval when required | git push/fetch, network egress, secret injection, deploy, external APIs, host actions |
 
-The container enforces the sandbox: non-root, workspace-only mount, read-only rootfs, no host network, no Docker socket, CPU/memory/time limits. The engine has no credential or route to perform a boundary effect directly, so the gateway is not advisory — it is the only path.
+The execution runtime enforces the sandbox: non-root, confined workspace, protected system/home, no host network, no systemd/Docker control, CPU/memory/PID/time limits. The engine has no credential or route to perform a boundary effect directly, so the gateway is not advisory — it is the only path.
 
 Within the sandbox, the engine has delegated authority over files the task granted. The diff and command log are the accountability mechanism. This is a deliberate trade-off: per-file mediation would make coding agents unusable and would not survive engine substitution.
 
@@ -213,7 +220,7 @@ Within the sandbox, the engine has delegated authority over files the task grant
 | `net.fetch` | domain allowlist | R0/R2 | Research; SSRF controls |
 | `browser.use` | domain allowlist | R2 | v0.3 |
 | `deploy.staging` | environment | R2 | v0.4 |
-| `deploy.production` | environment | R3 | Always approval in MVP |
+| `deploy.production` | environment | R3 | Always approval in the fast path |
 | `secret.inject` | named secret + target operation | — | **Gateway-internal precondition**, not a worker-callable capability. Attaches a secret to one already-granted operation (e.g. `git.push`); never returns the value. |
 | `integration.use` | integration id | R1–R3 | Per-tool risk |
 | `task.create` | — | R0 | Orchestrator only |
@@ -243,7 +250,7 @@ Risk is declared by the tool and used by policy. It is never inferred from model
 | R3 | **approve** | **approve** | **approve** |
 | R4 | deny | deny (user-only) | deny (user-only) |
 
-**Sandbox-local R1 effects are covered by the task's admission approval.** In Restricted mode, the user approves the task's declared write scope once, before the runner starts; the engine does not request approval for each file. Boundary effects (R2+) use a per-call approval whenever the matrix says approve. One bounded approval, not a prompt storm.
+**Sandbox-local R1 effects are covered by the task's admission approval.** In Restricted mode, the user approves the task's declared write scope once, before the execution starts; the engine does not request approval for each file. Boundary effects (R2+) use a per-call approval whenever the matrix says approve. One bounded approval, not a prompt storm.
 
 Rules that override the matrix:
 
@@ -352,7 +359,7 @@ Standing grants never cover R3 production or R4 secrets in v0.4. They are visibl
 
 ### 7.1 Storage
 
-- AES-256-GCM with a 32-byte master key from `/data/secrets/master.key` (0600, owned by the container user).
+- AES-256-GCM with a 32-byte master key from `/data/secrets/master.key` (0600, owned by the app/worker user).
 - Ciphertext + nonce + key version in `secret`.
 - The master key is excluded from backups by default; the backup command includes it only with `--include-key` and prints a warning (otherwise a restored backup cannot decrypt). Documented trade-off.
 - Key rotation: new key version, re-encrypt on write, background re-encrypt later.
@@ -385,23 +392,39 @@ Standing grants never cover R3 production or R4 secrets in v0.4. They are visibl
 
 ## 8. Execution isolation
 
-### 8.1 Container hardening (runner)
+### 8.1 Native execution hardening (default)
+
+The native runtime is authoritative in [`native-execution-and-resources.md`](./native-execution-and-resources.md) §5. Baseline controls:
 
 | Control | Value |
 |---|---|
-| User | non-root UID 10001 |
-| Root filesystem | read-only, with tmpfs for `/tmp` and cache |
-| Mounts | workspace only (rw), engine cache (ro/rw per engine) |
-| Docker socket | never mounted |
-| Capabilities | `--cap-drop=ALL` |
-| Privileges | `no-new-privileges` |
-| Seccomp | default profile; custom only with review |
-| PIDs limit | 512 |
-| Memory | 2 GB default |
-| CPU | 1.5 cores default |
+| User | non-root `microdots-worker` |
+| Workspace | per-run directory; `realpath`-checked; `ProtectSystem=strict` + `ReadWritePaths` |
+| Host home | `ProtectHome=yes` |
+| Devices | `PrivateDevices=yes` |
+| Temp | `PrivateTmp=yes`; per-run cache removed at cleanup |
+| systemd/Docker control | never available to the execution unit |
+| Capabilities | `CapabilityBoundingSet=` empty; `NoNewPrivileges=yes` |
+| Address families | `AF_UNIX` only by default; network profile is separate |
 | Network | **no egress by default**; only the task capability bridge is reachable. Research/browser egress goes through a gateway-mediated proxy with a domain allowlist. |
-| Timeout | task deadline + 2 min hard kill |
+| PIDs | profile; 512 max for heavy |
+| Memory | `MemoryHigh`/`MemoryMax` from the operator profile |
+| CPU | `CPUQuota` from the operator profile |
+| Timeout | task deadline + hard kill via the cgroup |
 | Logs | size-capped, redacted |
+| Cleanup | unit/cgroup/process/temp/lock/port verification |
+
+**Privileged helper (`microdots-exec`).** Root-owned, narrow API on a Unix socket:
+
+- peer credentials (`SO_PEERCRED`) checked;
+- only typed start/stop/kill/logs/usage/cleanup/reconcile operations;
+- only operator profiles; the caller cannot set cgroup values;
+- argv arrays, no shell; path and executable validation;
+- no generic `systemctl` passthrough;
+- every operation audited;
+- no secrets in requests or logs.
+
+If a request cannot be validated, it is denied. The helper is not a convenience wrapper around root.
 
 ### 8.2 Workspace confinement
 
@@ -409,22 +432,32 @@ Standing grants never cover R3 production or R4 secrets in v0.4. They are visibl
 - Symlinks pointing outside are rejected.
 - Git hooks and `.git/config` are sanitized; `core.hooksPath` is cleared.
 - `GIT_*` environment variables are stripped except the adapter's explicit ones.
-- Project roots are distinct per project; no cross-project mounts.
-- The workspace mount is the entire sandbox: `/data`, the database socket, the Docker socket and other projects are not reachable from the engine.
+- Project roots are distinct per project; no cross-project access.
+- The confined workspace is the entire sandbox: `/data`, the database socket, the helper socket and other projects are not reachable from the engine.
 
 ### 8.3 Untrusted repository code
 
 Running tests and builds executes repository code. Mitigations:
 
-- Only inside the runner container, never in the app/worker process.
-- No host mounts, no Docker socket, no DB credentials, no unrelated secrets, no ambient network.
+- Only inside the execution unit, never in the app/worker process.
+- No host home, no systemd/Docker control, no DB credentials, no unrelated secrets, no ambient network.
 - `project.exec` is network-off. A command that needs the network is a separate `project.exec.network` boundary operation, evaluated and audited as R2.
-- `project.exec.network` runs in a **one-shot network-enabled sandbox**: same image, workspace mount, no host mounts, attached only to an egress proxy with a per-command domain allowlist and optional short-lived secret injection. The long-lived engine sandbox stays network-off; the one-shot container is destroyed after the command and its output is captured.
+- `project.exec.network` runs in a **one-shot network-enabled execution profile**: same workspace, no host home/control, attached only to an egress proxy with a per-command domain allowlist and optional short-lived secret injection. The long-lived engine unit stays network-off; the one-shot unit is destroyed after the command and its output is captured.
 - `npm install` scripts run with `--ignore-scripts` unless explicitly approved.
-- Timeouts and output caps.
-- The runner image is rebuilt and pinned per release.
+- Timeouts, output caps and cgroup kill of the whole process tree.
+- The runtime and engine binaries are pinned per release.
 
 This does not make arbitrary code safe. It bounds the blast radius and makes the risk explicit in the UI.
+
+### 8.4 Shared browser isolation
+
+- One shared Chromium/Playwright service, started on demand; no browser per agent.
+- No host display; isolated contexts/profiles per integration.
+- Downloads quarantined; egress allowlisted; metadata/private IPs blocked with DNS re-resolution.
+- Human takeover is an authenticated, scoped, expiring session; it is audited and does not grant the agent new capabilities.
+- Browser memory counts against the MicroDots budget and is a heavy execution.
+- Cleanup verifies no Chromium process, profile lock or temp profile remains.
+- WebRTC is last and requires a measured affordability decision.
 
 ---
 
@@ -441,16 +474,16 @@ Rules:
 7. Outputs that look like instructions are not executed; they are displayed or passed to the user.
 8. Browser pages cannot trigger host actions; only the gateway can.
 
-Testing: a prompt-injection fixture repo and a malicious MCP server run in CI from v0.2; the expected outcome is a policy denial and an audit record, never execution.
+Testing: a prompt-injection fixture repo and a malicious MCP server run in CI from P3/P5; the expected outcome is a policy denial and an audit record, never execution.
 
 ---
 
 ## 10. Supply chain
 
-- Lockfile committed; `pnpm install --frozen-lockfile` in CI and Docker builds.
+- Lockfile committed; `pnpm install --frozen-lockfile` in CI (and the optional Docker build).
 - Dependency audit (`pnpm audit`) in CI; high/critical blocks release unless documented.
-- Docker images pinned by digest in Compose; base images pinned by tag + digest.
-- Release images built in CI with provenance attestation (where supported).
+- Optional Docker images pinned by digest; native runtime/engine binaries pinned by version.
+- Release artifacts built in CI with provenance attestation (where supported).
 - Installer verifies checksums of downloaded artifacts; `curl | bash` is documented but also offered as download-then-inspect.
 - No postinstall scripts from dependencies in production images unless reviewed.
 - Skills and modules have trust tiers (§8 of extensibility doc) and never auto-enable.
@@ -479,7 +512,7 @@ Audit is append-only at the application layer, has no cascading deletes, and is 
 
 ## 12. Transport and browser hardening
 
-Caddy sets:
+The existing reverse proxy (or the optional Caddy profile) sets:
 
 ```
 Strict-Transport-Security: max-age=31536000; includeSubDomains
@@ -521,7 +554,7 @@ Content-Security-Policy:
 ## 14. Incident response
 
 1. **Contain:** disable the affected module/engine (`MICRODOTS_DISABLED_MODULES`), revoke tokens, stop the worker.
-2. **Preserve:** export audit log, task events, container logs before cleanup.
+2. **Preserve:** export audit log, task events, execution logs and cleanup results before cleanup.
 3. **Assess:** determine what executed, with which credentials, and whether external effects occurred.
 4. **Rotate:** all secrets reachable by the affected scope; sessions; Git/deploy credentials.
 5. **Notify:** instance owner; if the project is open source and the issue affects others, follow responsible disclosure.
@@ -538,12 +571,13 @@ A security incident is never resolved by deleting logs.
 - [ ] Policy: deny-by-default verified; matrix tests green; branch coverage 100%.
 - [ ] Approvals: scope hash, expiry, single-use, audit verified.
 - [ ] Secrets: no plaintext in DB/logs/client bundle; redaction test passes.
-- [ ] Containers: non-root, no socket, caps dropped, limits set.
+- [ ] Execution: non-root, no control socket, caps dropped, cgroup limits set, cleanup verified.
+- [ ] Helper: peer credentials, profile allowlist, no generic systemctl, audited.
 - [ ] Path traversal and symlink tests pass.
 - [ ] SSRF: metadata and private ranges blocked, DNS rebinding test passes.
 - [ ] Prompt injection fixtures do not execute tools.
 - [ ] Dependency audit clean or documented.
-- [ ] Images pinned; checksums verified.
+- [ ] Runtime/engine binaries and optional images pinned; checksums verified.
 - [ ] Headers and CSP verified with a scanner.
 - [ ] Backup/restore includes/excludes the key as documented.
 - [ ] `microdots doctor` reports security-relevant misconfigurations.

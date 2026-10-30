@@ -9,31 +9,32 @@ This repository is built by humans and AI agents together. These rules exist so 
 ## 1. Read first (in order, minimum set)
 
 1. [`Docs/product-thesis.md`](./Docs/product-thesis.md) — what this is and what it refuses to be.
-2. [`Docs/technical-architecture.md`](./Docs/technical-architecture.md) — stack, boundaries, flows.
-3. [`Docs/roadmap.md`](./Docs/roadmap.md) §5 — the MVP definition.
-4. [`Docs/backlog.md`](./Docs/backlog.md) — the work board and current focus.
-5. The doc specific to your area:
+2. [`Docs/roadmap.md`](./Docs/roadmap.md) §5 — the personal-operator fast-path MVP.
+3. [`Docs/native-execution-and-resources.md`](./Docs/native-execution-and-resources.md) — native runtime, helper, budgets, browser, cleanup.
+4. [`Docs/technical-architecture.md`](./Docs/technical-architecture.md) — stack, boundaries, flows.
+5. [`Docs/backlog.md`](./Docs/backlog.md) — the active work board and current focus.
+6. The doc specific to your area:
    - Backend → [`data-model.md`](./Docs/data-model.md), [`api-contracts.md`](./Docs/api-contracts.md)
    - Security/auth/policy → [`security-and-auth.md`](./Docs/security-and-auth.md)
    - UI → [`ux-spec.md`](./Docs/ux-spec.md)
-   - Engines/adapters → [`extensibility-and-modules.md`](./Docs/extensibility-and-modules.md)
+   - Engines/adapters/runtime → [`extensibility-and-modules.md`](./Docs/extensibility-and-modules.md), [`native-execution-and-resources.md`](./Docs/native-execution-and-resources.md)
    - Installer/ops → [`installer-and-operations.md`](./Docs/installer-and-operations.md)
    - Skills → [`skills-system.md`](./Docs/skills-system.md)
 
-`Docs/master-prd.md` is the product source of truth. If implementation conflicts with it, stop and surface the conflict; do not silently simplify a requirement.
+`Docs/master-prd.md` remains the long-term product source of truth. The active personal-operator track is a deliberate, narrower sequence; it does not delete or silently weaken PRD requirements. The deferred product plan is in [`Docs/product-roadmap.md`](./Docs/product-roadmap.md) and [`Docs/product-backlog.md`](./Docs/product-backlog.md). If implementation conflicts with the PRD or an invariant, stop and surface the conflict.
 
 ---
 
 ## 2. The invariants (never violate these)
 
 1. **The backend owns task state.** Never let a client, prompt or engine become the source of truth.
-2. **Every effect that crosses the task sandbox passes through the execution gateway.** Workspace-local edits and commands run inside a capability-scoped container, authorized at task admission and fully captured; git push, network egress, secrets, deployments, external APIs and host actions are gateway-mediated. No adapter is called directly from a route, orchestrator or worker.
+2. **Every effect that crosses the task sandbox passes through the execution gateway.** Workspace-local edits and commands run inside a capability-scoped execution runtime (native systemd/cgroups by default, container optional), authorized at task admission and fully captured; git push, network egress, secrets, deployments, external APIs and host actions are gateway-mediated. No adapter is called directly from a route, orchestrator or worker.
 3. **Policy is code, not prose.** Never implement a permission check by asking a model or by trusting a tool description.
 4. **Deny by default.** An unknown capability or missing grant is denied.
 5. **Approvals are scoped, expiring, single-use and audited.** Never add an "approve all" or a mode that bypasses approval.
 6. **`packages/domain` and `packages/policy` are pure.** No `fs`, `fetch`, DB, clock or randomness. Accept `now` as an argument.
-7. **Engines and adapters are modules.** Core code imports the contract, never an engine/adaptor implementation.
-8. **Engine selection happens after policy.** Switching engines cannot grant capabilities.
+7. **Engines, adapters and execution runtimes are modules.** Core code imports the contract, never an implementation.
+8. **Engine selection happens after policy and admission.** Switching engines cannot grant capabilities or resources.
 9. **Events are append-only and ordered per task.** Never update or delete a task event.
 10. **Secrets never reach the client, prompts or logs.** Use the secret store; inject values only inside the gateway/adapter for the duration of one call.
 11. **A restart cannot mark unverified work as complete.** Recovery must be honest.
@@ -41,6 +42,9 @@ This repository is built by humans and AI agents together. These rules exist so 
 13. **Closing the client cannot stop server work.** No execution loop in the browser.
 14. **Docs change with the code.** An interface, env var, event, capability or flow change updates its doc in the same PR.
 15. **No new core dependency without justification** (see engineering guide §11). Major choices get an ADR.
+16. **Resources are operator-owned.** The agent may request a workload profile; it cannot grant, raise or bypass a budget, admission decision or cgroup limit.
+17. **Execution is unprivileged by default.** App and worker never run as root or receive the Docker/systemd socket; only the narrow `microdots-exec` helper may start/stop transient units.
+18. **Cleanup is verified.** A task is not complete until its unit, cgroup, processes, temp files, locks and browser/profile state are gone or the failure is visible.
 
 If a task cannot be completed without violating an invariant, **stop and report the conflict** with options. Do not work around it.
 
@@ -121,18 +125,23 @@ Before you finish: `pnpm check && pnpm test` must pass. If you cannot run someth
 ## 5. How to pick work
 
 1. Open [`Docs/backlog.md`](./Docs/backlog.md).
-2. Work only on the **current milestone** (currently M0) unless explicitly directed.
-3. Pick a `⬜` story. If unclear, choose the lowest-ID story in the current epic.
+2. Work only on the **current phase** (currently P1) unless explicitly directed. `M`/`E` work belongs to the deferred product track.
+3. Pick a `⬜` story. If unclear, choose the lowest-ID story in the current phase.
 4. If the story depends on an open decision in [`Docs/decisions.md`](./Docs/decisions.md), stop and ask rather than guessing.
 5. Mark `🟨` when you start, `✅` when the definition of done is met, and append the PR link.
 6. Do not renumber stories or rewrite completed history.
 
 **Sequencing rules that are not optional:**
 
-- No write-capable worker before the policy/gateway milestone is complete.
+- No scheduler before the native runtime can start, stop and clean up one job.
+- No write-capable worker before the policy/gateway/approval path is complete.
 - No second worker type before the first is verified end-to-end.
+- No browser automation before the shared browser lifecycle and budget exist.
+- No WebRTC before screenshots and human takeover are proven.
+- No memory graph before the operator is useful without it.
 - No multi-user before single-owner auth is secure.
 - No integration before the adapter contract exists.
+- No Docker/Podman runtime adapter before the native runtime is stable.
 
 ---
 
@@ -147,6 +156,8 @@ Before you finish: `pnpm check && pnpm test` must pass. If you cannot run someth
 - Emit events after commit, with the per-task sequence assigned atomically.
 - Every mutating endpoint states its idempotency behavior.
 - Errors use the standard envelope and stable codes.
+- Execution starts only through `ExecutionRuntime`; nothing calls `systemd-run`, `docker`, or a privileged helper from a route.
+- Resource profiles are resolved and checked before a run starts; the caller cannot raise them.
 
 ### Frontend
 
@@ -169,6 +180,8 @@ Before you finish: `pnpm check && pnpm test` must pass. If you cannot run someth
 - Domain: ≥ 90%.
 - Every illegal state transition has a test.
 - Every engine/adapter passes the shared contract harness.
+- Every `ExecutionRuntime` passes the shared runtime harness: limits, stop, timeout, logs, usage, cleanup, reconciliation.
+- Native runtime/cleanup tests run on Linux CI; non-Linux hosts must report the runtime unavailable, not silently skip.
 - A flaky test is a bug; quarantine with an issue, do not retry-loop.
 
 ---
@@ -179,6 +192,8 @@ Before you finish: `pnpm check && pnpm test` must pass. If you cannot run someth
 - Never weaken origin checks, CSP, rate limits or session flags to make a test pass.
 - Never add `eval`, `new Function`, dynamic `require`, or arbitrary model-generated code execution.
 - Never let a model output select a tool that is not in the task's allowlist.
+- Never let an agent raise its own resource limits, budget, profile or cgroup values.
+- Never run app/worker as root or give them the Docker/systemd socket; use the narrow helper.
 - Never bypass path confinement; resolve and check real paths.
 - Never add a network call to a private IP range or metadata endpoint.
 - Never put repository/web content into a system prompt as instructions; label it as untrusted data.
@@ -200,9 +215,10 @@ Before you finish: `pnpm check && pnpm test` must pass. If you cannot run someth
 
 | Task | Read | Do not |
 |---|---|---|
-| New engine | extensibility §5, architecture §10 | Import it in core, or edit OpenCode |
+| New engine | extensibility §5, architecture §10, native doc §5 | Import it in core, edit OpenCode, or bypass admission |
 | New adapter/tool | extensibility §3, api §7 | Call it outside the gateway |
-| New worker | architecture §10, policy doc | Grant capabilities by default |
+| New execution runtime | native doc §5, architecture §7 | Give app/worker root, or let the task set its own limits |
+| New worker | architecture §10, policy doc | Grant capabilities or resources by default |
 | New event | api §6 | Update/delete old events |
 | New endpoint | api §1–§5, eng-guide §9 | Put SQL or policy logic in the route |
 | New screen | ux spec | Skip empty/error/offline states |
@@ -214,13 +230,14 @@ Before you finish: `pnpm check && pnpm test` must pass. If you cannot run someth
 ## 10. Definition of done (checklist)
 
 - [ ] Behavior implemented server-side; authorization enforced.
-- [ ] Durable state persisted where required.
-- [ ] Failure, retry and cancellation handled and visible.
-- [ ] Tests at the right level; policy/contract tests updated.
+- [ ] Durable state persisted where required; unverified work is not marked complete.
+- [ ] Resource profile/admission enforced; the agent cannot raise it.
+- [ ] Failure, retry, cancellation and cleanup handled and visible.
+- [ ] Tests at the right level; policy/contract/runtime tests updated.
 - [ ] Logs/events useful and secret-free.
 - [ ] UI copy final; states covered.
 - [ ] Docs and contracts updated.
-- [ ] `pnpm check && pnpm test` green.
+- [ ] `pnpm check && pnpm test` green; Linux-only runtime tests run or explicitly noted.
 - [ ] Backlog story updated with PR link.
 - [ ] End-to-end outcome demonstrated (or explicitly noted as not runnable).
 
@@ -231,11 +248,12 @@ Before you finish: `pnpm check && pnpm test` must pass. If you cannot run someth
 Stop rather than guess when:
 
 - A requirement conflicts with an invariant or the PRD.
-- A decision is listed as open and blocks the work.
+- A decision is listed as open and blocks the work (for example host facts, first workflow, Postgres, access mode).
 - A change would require a new core dependency, a second datastore, or a schema-breaking migration.
 - You cannot verify the outcome and the story claims verification.
 - A security control would need to be relaxed.
 - Two docs disagree and you cannot tell which is authoritative.
+- The work would require root outside the narrow helper, or would let the agent raise its own limits.
 
 Ask with: the conflict, the options, your recommendation, and the cost of each. Do not ask open-ended questions when a specific trade-off can be presented.
 
@@ -243,10 +261,11 @@ Ask with: the conflict, the options, your recommendation, and the cost of each. 
 
 ## 12. Current focus
 
-- **Milestone:** M1 - installer and auth. M1A (production spine) is complete and green in CI.
-- **Epics:** E0 and E1 complete. E2 and E4 are in progress.
+- **Phase:** P1 — native execution runtime. P0 is complete, including M0, the M1A production spine and the avatar package.
+- **Next:** P1 `ExecutionRuntime` contract, `microdots-exec` helper, transient systemd unit, cgroup limits, logs/usage, stop and verified cleanup.
+- **Then:** P2 resource budget, admission control, queue and dashboard; P3 first real workflow; P4 OpenCode and avatars.
+- **Deferred:** the open-source product track (`M1B` auth/installer, passkeys, multi-user, mobile) is preserved in `product-roadmap.md` / `product-backlog.md`.
 - **License:** AGPL-3.0-only, decided (ADR-0009, `LICENSE` present). SDK/contracts licensing is D17.
-- **Next:** M1B - better-auth, setup token, owner creation, sessions and route guards.
-  Then M1C (passkeys/recovery) and M1D (installer/wizard).
+- **Host facts:** still needed before P3; see `native-execution-and-resources.md` §12.
 
-Do not start M2 until M1's exit criteria are met, including a green CI run and a fresh-VPS install.
+Do not start P2 until P1's cleanup test is real. Do not start a write-capable workflow before the gateway, policy and approvals exist.

@@ -1,10 +1,10 @@
 # MicroDots — Engineering Guide
 
-**Status:** Active conventions (M0 scaffold complete; later sections describe the target state)
+**Status:** Active conventions (P0 complete; P1 native runtime in progress)
 **Audience:** Contributors, maintainers, AI agents
-**Related:** [`technical-architecture.md`](./technical-architecture.md) · [`data-model.md`](./data-model.md) · [`api-contracts.md`](./api-contracts.md) · [`AGENTS.md`](../AGENTS.md)
+**Related:** [`technical-architecture.md`](./technical-architecture.md) · [`native-execution-and-resources.md`](./native-execution-and-resources.md) · [`data-model.md`](./data-model.md) · [`api-contracts.md`](./api-contracts.md) · [`AGENTS.md`](../AGENTS.md)
 
-> The M0 scaffold runs today. Installer, auth, migrations and the setup token land in M1.
+> The scaffold and M1A production spine run today. The active work is P1: native systemd/cgroup execution, the narrow helper, limits and verified cleanup. Docker remains an optional dev/reference profile.
 
 ---
 
@@ -20,7 +20,7 @@ pnpm db:up          # docker compose -f compose.dev.yaml up -d postgres
 pnpm dev            # api :3000, web :5173, idle worker
 ```
 
-Open `http://localhost:5173`. Check `GET /healthz` for the process and `GET /readyz` for the database. In development the API starts even when Postgres is down; `/readyz` returns 503 until it is reachable. Migrations, seed data and the setup token arrive in M1.
+Open `http://localhost:5173`. Check `GET /healthz` for the process and `GET /readyz` for the database. In development the API starts even when Postgres is down; `/readyz` returns 503 until it is reachable. The native execution runtime is Linux-only; on Windows/macOS the runtime reports `unavailable` and unit/runtime tests run in Linux CI.
 
 | Command | Purpose |
 |---|---|
@@ -52,10 +52,12 @@ packages/
   db/            Drizzle schema, migrations, repositories
   engines/       Engine contract + opencode, cline, fake
   adapters/      Integration contracts + mcp, cli, browser, vercel
+  avatars/       SVG morph engine + <microdots-bot> web component
   ai/            Provider registry, prompts, planner, summarizer
   ui/            Design system (tokens + components)
   config/        Env schema, constants, compatibility ranges
-deploy/          compose, Dockerfiles, install.sh, scripts
+deploy/native/   systemd units, microdots-exec helper, budget profiles (P1)
+deploy/          optional compose, Dockerfiles, install.sh, scripts
 skills/          Bundled skill bank
 tests/e2e/       Cross-process tests
 Docs/            This documentation set
@@ -178,9 +180,10 @@ useTaskEvents(taskId, {
 |---|---|---|---|
 | Unit | Vitest | Pure domain, policy, schemas, formatters | Every change |
 | Integration | Vitest + Testcontainers | Repositories, queue, migrations, gateway + fake engine | Backend changes |
-| Contract | Vitest harness | Engines/adapters against shared spec | Every module |
-| E2E | Playwright | Setup → task → approval → completion → restart | Critical paths |
-| Visual (v0.2) | Playwright screenshots | Core screens, light/dark, mobile | UI changes |
+| Contract | Vitest harness | Engines/adapters/runtimes against shared spec | Every module |
+| Runtime | Linux CI | cgroup limits, stop/kill, logs, usage, cleanup, reconcile | Native runtime changes |
+| E2E | Playwright | Setup → task → approval → completion → cleanup → restart | Critical paths |
+| Visual | Playwright screenshots | Core screens, light/dark, mobile, avatars | UI changes |
 
 ### 6.2 Coverage targets
 
@@ -370,9 +373,11 @@ Rules:
 | Route chunk | < 80 KB |
 | Lighthouse mobile performance | ≥ 90 |
 | Lighthouse accessibility | 100 |
-| Docker image (app) | < 400 MB |
+| Docker image (optional app) | < 400 MB |
 | Cold start (app) | < 3 s |
 | SSE replay 10k events | < 2 s |
+| Idle app + worker memory | < 400 MB combined |
+| Heavy execution | within its cgroup profile, never above the MicroDots budget |
 
 Regressions block release. Measure, don't guess.
 

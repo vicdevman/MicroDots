@@ -231,24 +231,24 @@ The `fake` and `opencode` engines run the same fixtures where practical. Results
 
 ## 8. Bundled skill bank
 
-Status: `ready` = usable in MVP; `draft` = written, not yet evaluated; `planned` = specified only.
+Status: `ready` = usable in the fast path; `draft` = written, not yet evaluated; `planned` = specified only.
 
-| # | Skill | Worker | Status | Milestone | Purpose |
+| # | Skill | Worker | Status | Phase | Purpose |
 |---|---|---|---|---|---|
-| 1 | `investigate-build-failure` | coding | ready | M5 | Diagnose a build failure, produce verified root cause |
-| 2 | `fix-failing-tests` | coding | ready | M5 | Reproduce, fix, verify a failing test suite |
-| 3 | `prepare-change-summary` | coding | ready | M5 | Summarize a diff with evidence for review |
-| 4 | `review-pull-request` | review | planned | M7 | Review changes against requirements and risks |
-| 5 | `setup-project-workspace` | coding | draft | M5 | Clone, install, and verify a project baseline |
-| 6 | `onboard-repository` | research | planned | M7 | Map a repo's structure, commands and conventions |
-| 7 | `research-technical-topic` | research | planned | M7 | Evidence-based research with citations |
-| 8 | `document-project` | documentation | planned | M7 | Produce/update docs from code and tasks |
-| 9 | `prepare-release-notes` | documentation | planned | M9 | Curate changelog into user-facing notes |
-| 10 | `investigate-vps-health` | devops | planned | M9 | Diagnose disk, memory, services, logs |
-| 11 | `deploy-to-vercel` | devops | planned | M9 | Environment-scoped deployment with verification |
-| 12 | `triage-github-issue` | research | planned | M9 | Reproduce, classify, propose next action |
-| 13 | `audit-dependencies` | coding | planned | v0.4 | Identify risky/outdated dependencies |
-| 14 | `compare-engines` | coding | planned | v0.4 | Run a fixture on two engines and compare outcomes |
+| 1 | `investigate-build-failure` | coding | ready | P4 | Diagnose a build failure, produce verified root cause |
+| 2 | `fix-failing-tests` | coding | ready | P4 | Reproduce, fix, verify a failing test suite |
+| 3 | `prepare-change-summary` | coding | ready | P4 | Summarize a diff with evidence for review |
+| 4 | `review-pull-request` | review | planned | P4+ | Review changes against requirements and risks |
+| 5 | `setup-project-workspace` | coding | draft | P4 | Clone, install, and verify a project baseline |
+| 6 | `onboard-repository` | research | planned | P5+ | Map a repo's structure, commands and conventions |
+| 7 | `research-technical-topic` | research | planned | P5 | Evidence-based research with citations |
+| 8 | `document-project` | documentation | planned | P4+ | Produce/update docs from code and tasks |
+| 9 | `prepare-release-notes` | documentation | planned | P5+ | Curate changelog into user-facing notes |
+| 10 | `investigate-vps-health` | devops | planned | P2 | Diagnose disk, memory, services, logs |
+| 11 | `deploy-to-vercel` | devops | planned | P3 | Environment-scoped deployment with verification |
+| 12 | `triage-github-issue` | research | planned | P5 | Reproduce, classify, propose next action |
+| 13 | `audit-dependencies` | coding | planned | P4 | Identify risky/outdated dependencies |
+| 14 | `compare-engines` | coding | planned | P7 | Run a fixture on two engines and compare outcomes |
 
 The bank is deliberately small. A skill that is not evaluated is documentation cosplay.
 
@@ -361,11 +361,9 @@ After changes are implemented and verified, before requesting review or push.
 
 ## 12. Roadmap
 
-| Release | Skill capability |
+| Phase | Skill capability |
 |---|---|
-| v0.1 | Bundled bank (4 skills: 3 ready, 1 draft), loader, binding, task attribution, no UI management |
-| v0.2 | Skill UI (browse/enable/preview), eval harness in CI, 8 skills |
-| v0.3 | Project-scoped skill packs, authoring guide published |
-| v0.4 | Import from local path, validation report, version pinning |
-| v0.5 | Verified registry, signatures, dependency declaration |
-| v1.0 | Stable format, compatibility policy, community contribution flow |
+| P4 | Bundled bank (4 skills: 3 ready, 1 draft), loader, binding, task attribution, no UI management |
+| P5 | Skill UI (browse/enable/preview), eval harness in CI, 8 skills |
+| P6+ | Project-scoped skill packs, authoring guide published |
+| P7 / product track | Import from local path, validation report, version pinning; verified registry, signatures, dependency declaration; stable format and compatibility policy |

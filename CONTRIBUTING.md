@@ -1,6 +1,6 @@
 # Contributing to MicroDots
 
-Thanks for being here. MicroDots is an open-source, self-hosted AI operations platform. We are currently in the **documentation and foundations phase** — the most valuable contribution is sharp thinking, not volume of code.
+Thanks for being here. MicroDots is an open-source, self-hosted AI operations platform. We are currently building the **personal-operator fast path**: native execution, operator-owned budgets, one real workflow, and OpenCode. Sharp thinking and careful runtime work are more valuable than volume.
 
 Please read [`AGENTS.md`](./AGENTS.md) and [`Docs/00-index.md`](./Docs/00-index.md) before opening a PR. They define the invariants, the architecture and the definition of done.
 
@@ -10,13 +10,14 @@ Please read [`AGENTS.md`](./AGENTS.md) and [`Docs/00-index.md`](./Docs/00-index.
 
 | Phase | Status |
 |---|---|
-| Product requirements | Complete |
-| Architecture, data model, API, security, UX | Complete |
-| Roadmap and MVP definition | Complete |
-| Repository scaffold, CI | **Next** |
-| Installer, auth, durable tasks | Planned (M1–M2) |
+| Product requirements | Complete (long-term) |
+| Architecture, data model, API, security, UX | Complete; native runtime design added |
+| Personal-operator roadmap and fast-path definition | Complete |
+| Foundation, M1A spine, avatars package | Complete |
+| Native runtime, helper, budgets, first workflow | **P1–P3, in progress** |
+| Browser/takeover, memory graph | Later (P5–P6) |
 
-The working MVP is `v0.1.0`. Its definition is in [`Docs/roadmap.md`](./Docs/roadmap.md) §5. If a change does not serve a story in [`Docs/backlog.md`](./Docs/backlog.md), it is probably too early.
+The active fast path is defined in [`Docs/roadmap.md`](./Docs/roadmap.md) §5. If a change does not serve a story in [`Docs/backlog.md`](./Docs/backlog.md), it is probably too early. The deferred open-source product plan is in [`Docs/product-roadmap.md`](./Docs/product-roadmap.md).
 
 ---
 
@@ -49,7 +50,7 @@ pnpm db:up
 pnpm dev
 ```
 
-Requirements: Node 22.x, pnpm 12.x, Docker (for Postgres).
+Requirements: Node 22.x, pnpm 12.x. Docker is needed only for the optional dev Postgres container and integration tests; the native execution runtime is Linux-only.
 
 Before pushing:
 
@@ -65,7 +66,7 @@ Integration tests need Docker: `pnpm test:integration`.
 ## Pull requests
 
 1. **One concern per PR.** Keep it reviewable (< 400 lines where possible).
-2. **Link the story** (`E5-S3`) and the relevant doc.
+2. **Link the story** (`P1-S3`) and the relevant doc.
 3. **Describe:** what changed, why, how it was verified, risk, docs updated.
 4. **Add tests** at the level appropriate to the risk. Policy changes need branch coverage.
 5. **Update docs** in the same PR: API, events, env vars, capabilities, UX flows.
@@ -107,7 +108,9 @@ Security-sensitive areas need two reviewers: `packages/policy`, auth, gateway, s
 - A new datastore or core dependency without an ADR.
 - A protocol/API change without updating contracts and docs.
 - A feature that marks itself complete without evidence or tests.
-- Anything that weakens CSRF, CSP, path confinement or secret handling to make a test pass.
+- Anything that weakens CSRF, CSP, path confinement, secret handling or cgroup limits to make a test pass.
+- A path that lets the agent raise its own budget/profile/limits.
+- An execution path that gives app/worker root or the systemd/Docker socket.
 
 ---
 

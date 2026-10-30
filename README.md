@@ -8,7 +8,7 @@ One orchestrator plans the work. Specialized workers do it. A policy engine deci
 [![License](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](./LICENSE)
 [![Stack](https://img.shields.io/badge/stack-TypeScript%20%C2%B7%20Node%20%C2%B7%20React%20%C2%B7%20Postgres-3178c6)](#tech-stack)
 
-> **Project status:** documentation, architecture, and the M0 repository scaffold are complete. The app is a development shell; nothing here is installable yet. M1 (installer, auth, and the first authenticated shell) is next. The roadmap below is the plan, not a changelog.
+> **Project status:** M0, the M1A production spine and the avatar package are complete. The active track is a **personal operator** on a shared 4 GB / 1 vCPU VPS: native systemd/cgroups, operator-owned budgets, one real workflow. Docker Compose remains an optional reference profile. The current phase is **P1 — native execution runtime**; the app is not yet a daily-driver operator. The roadmap below is the plan, not a changelog.
 
 ---
 
@@ -54,29 +54,26 @@ Dots   Pushed. Branch: fix/build. Task complete, verified.
 
 ---
 
-## Planned for v0.1 (the working MVP)
+## Current fast path (P1–P4)
 
-The MVP is deliberately small: **one orchestrator, one coding worker, durable tasks, policy and approvals, a PWA, and a one-command install.** If it is not on this list, it is not in v0.1.
+The personal-operator MVP is deliberately small: **native execution, an operator budget, one real workflow, the gateway/approvals, OpenCode, and avatars.** If it is not on this list, it is not in the fast path.
 
-| Capability | Status |
-|---|---|
-| One-command install on Ubuntu/Debian (amd64/arm64) | Planned |
-| First-run claim token, passkeys, clean auth | Planned |
-| Setup wizard: provider + project | Planned |
-| Chat orchestrator that plans into durable tasks | Planned |
-| Task states, events, cancellation, restart recovery | Planned |
-| Policy engine, three modes, scoped approvals | Planned |
-| Coding worker via OpenCode, isolated runner | Planned |
-| Verified results: diff, tests, logs, honest status | Planned |
-| In-app + web push notifications | Planned |
-| System health, backup, restore, upgrade, doctor | Planned |
-| Responsive, installable PWA | Planned |
+| Capability | Phase | Status |
+|---|---|---|
+| Native systemd/cgroup runtime + verified cleanup | P1 | Next |
+| Operator budget, admission, queue, resource dashboard | P2 | Planned |
+| First real repo/deploy workflow through the gateway | P3 | Planned |
+| OpenCode coding worker | P4 | Planned |
+| Agent avatars driven by real task state | P4 | Package done; wiring planned |
+| Browser + human takeover | P5 | Later |
+| Memory graph + retrieval (RAG) | P6 | Later |
+| WebRTC / optional Docker runtime / product track | P7 | Deferred |
 
-**Explicitly not in v0.1:** research worker, browser worker, MCP, multi-user, skill management UI, deployment integrations, mobile app, marketplace.
+**Explicitly not in the fast path:** public installer/passkey polish, multi-user, marketplace, skill management UI, research worker, MCP catalog, mobile app, WebRTC, a second datastore.
 
-### Definition of done for the MVP
+### Definition of done for the fast path
 
-> A technical stranger installs MicroDots on a fresh VPS with one command, connects a model provider and a repository, delegates a real code fix, approves the one risky step, and receives a verified result — then closes the browser, reboots the server, and finds the task and its evidence intact.
+> The owner asks for a real repository change or deployment. MicroDots admits it against the host budget, executes it in a confined native runtime, asks for the one consequential approval, produces evidence, cleans up completely, and survives a restart without lying about the result.
 
 Full criteria and demo script: [`Docs/roadmap.md`](./Docs/roadmap.md) §5.
 
@@ -88,29 +85,36 @@ Full criteria and demo script: [`Docs/roadmap.md`](./Docs/roadmap.md) §5.
                     PWA (React + Vite)  ·  future React Native
                                    │ HTTPS
                                    ▼
-                            Caddy (auto TLS)
+                    Existing proxy (nginx/Caddy/Traefik)
                                    │
+                                   ▼
                  ┌─────────────────┴─────────────────┐
                  ▼                                   ▼
         Fastify API + SSE                    Worker (pg-boss)
-        auth · policy · gateway              orchestrator · scheduler
+        auth · policy · gateway              orchestrator · admission
                  │                                   │
                  └──────────────┬────────────────────┘
                                 ▼
                      PostgreSQL 17 (truth + queue)
                                 │
                                 ▼
-                 Runner containers (isolated)
+                 microdots-exec (root, narrow)
+                                │
+                                ▼
+                 transient systemd unit + cgroup v2
                  OpenCode · Cline · custom engines
+                 shared browser (on demand)
                                 │
                                 ▼
               Models · Git · MCP · APIs · Web (allowlisted)
 ```
 
-- **Modular monolith + isolated runners.** Not microservices. One VPS is the target.
-- **One datastore.** Postgres holds state, events and the queue (pg-boss). No Redis.
-- **Engines are modules.** Adding Cline must not touch OpenCode or the core.
-- **Every effect that leaves the task sandbox goes through the gateway.** Workspace edits run in an isolated, capability-scoped container; push, network, secrets and deploys are gateway-mediated. Deny by default; approvals are scoped and single-use.
+- **Modular monolith + isolated execution runtimes.** Not microservices. One shared VPS is the target.
+- **Native first.** systemd transient units + cgroups v2; app/worker unprivileged; Docker is an optional runtime/profile.
+- **One datastore.** Postgres holds state, events, queue (pg-boss) and later memory. No Redis or vector DB.
+- **Engines and runtimes are modules.** Adding Cline or a Docker runtime must not touch the core.
+- **Every effect that leaves the task sandbox goes through the gateway.** Workspace edits run in a cgroup-limited unit; push, network, secrets and deploys are gateway-mediated. Deny by default; approvals are scoped and single-use.
+- **Resources are operator-owned.** The agent requests a profile; it cannot raise a budget or cgroup limit.
 
 Details: [`Docs/technical-architecture.md`](./Docs/technical-architecture.md) · [`Docs/extensibility-and-modules.md`](./Docs/extensibility-and-modules.md)
 
@@ -130,9 +134,10 @@ Details: [`Docs/technical-architecture.md`](./Docs/technical-architecture.md) ·
 | AI | Vercel AI SDK | Provider-agnostic: OpenAI-compatible, Anthropic, Google, OpenRouter, Ollama |
 | Web | React 19 + Vite 7 + Tailwind 4 + shadcn/ui | Fast PWA, accessible primitives |
 | Realtime | Server-Sent Events | One-way, reconnecting, replayable |
-| Engines | OpenCode (v0.1); Cline (v0.2); others via contract | Pluggable; multiple can coexist |
-| Browser (v0.3) | Playwright | Isolation and tracing |
-| Deploy | Docker Compose + Caddy | One command, automatic TLS |
+| Engines | OpenCode (P4); Cline later; others via contract | Pluggable; multiple can coexist |
+| Runtime | Native systemd + cgroups v2; Docker optional | Per-run limits, cleanup, no daemon dependency |
+| Browser (P5) | Playwright, shared service | On demand, isolated contexts, human takeover |
+| Deploy | Existing proxy + systemd; Docker Compose optional | Fits the shared host; no port squatting |
 | Tests | Vitest, Playwright, Testcontainers | Unit, e2e, real Postgres |
 | Lint | Biome | One fast tool |
 
@@ -142,26 +147,20 @@ Details: [`Docs/technical-architecture.md`](./Docs/technical-architecture.md) ·
 
 ## Quickstart
 
-> Not available yet. This is the target experience for `v0.1.0`.
+> The native personal runbook is P1 work; the Docker reference profile exists but is not the default. Do not run either on the shared VPS without reading [`Docs/native-execution-and-resources.md`](./Docs/native-execution-and-resources.md).
 
-```bash
-curl -fsSL https://get.microdots.dev/install.sh -o install.sh
-less install.sh
-sudo bash install.sh
-```
+The target native flow is documented in [`Docs/installer-and-operations.md`](./Docs/installer-and-operations.md) §3.0. It will:
 
-The installer checks the OS, installs Docker if needed, generates secrets, starts the stack, verifies health, and prints:
+- detect systemd/cgroup v2 and the existing proxy;
+- create an unprivileged app/worker, a narrow root helper and a root-owned budget;
+- run one sample execution with limits and verified cleanup;
+- print the setup URL/token once.
 
-```text
-MicroDots is running at https://dots.example.com
-Setup token: md_setup_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-Open the URL, paste the token, create a passkey, add a model key, connect a repo. Ten minutes, no YAML.
+The optional Docker reference profile (Caddy, app, worker, Postgres) remains available from M1A. It is not required and is not what the shared host should run by default.
 
 ### Local development
 
-> The M0 scaffold runs. Installer, auth, migrations and the setup token arrive in M1.
+> The scaffold and production spine run. Native runtime, admission and the first workflow arrive in P1–P3.
 
 ```bash
 corepack enable
@@ -181,22 +180,18 @@ See [`Docs/engineering-guide.md`](./Docs/engineering-guide.md).
 
 ## Roadmap
 
-| Phase | Outcome | Est. solo |
-|---|---|---|
-| **M0** | Docs, repo, CI, decisions | 1 wk |
-| **M1** | Install + auth + empty app on a VPS | 2 wks |
-| **M2** | Durable tasks, events, queue, replay | 2 wks |
-| **M3** | Orchestrator creates real tasks | 2 wks |
-| **M4** | Policy engine, gateway, approvals | 2 wks |
-| **M5** | Coding worker via OpenCode | 3 wks |
-| **M6** | **v0.1.0 MVP** — hardened, installable | 2 wks |
-| **M7** | v0.2 — research, MCP, skill bank | 3–4 wks |
-| **M8** | v0.3 — browser + human takeover | 4 wks |
-| **M9** | v0.4 — DevOps, integrations, standing grants | 4 wks |
-| **M10** | v0.5 — multi-user | 4 wks |
-| **M11** | v1.0 — mobile, API freeze | 6+ wks |
+| Phase | Outcome |
+|---|---|
+| **P0** ✅ | Foundation, M1A spine, avatar package, docs pivot |
+| **P1** | Native systemd/cgroup runtime, helper, limits, verified cleanup |
+| **P2** | Operator budget, admission, queue, resource dashboard |
+| **P3** | Gateway, approvals, audit and one real repo/deploy workflow |
+| **P4** | OpenCode coding worker + avatars |
+| **P5** | Shared browser + human takeover |
+| **P6** | Memory graph + retrieval (RAG), Postgres-first |
+| **P7** | WebRTC, optional Docker runtime, managed Postgres, product track |
 
-**MVP: ~12–14 weeks solo, or 7–9 weeks with two engineers.** Full detail, gates and risks: [`Docs/roadmap.md`](./Docs/roadmap.md).
+**Fast path: P1–P4.** Full detail, gates and risks: [`Docs/roadmap.md`](./Docs/roadmap.md). The original product plan is preserved in [`Docs/product-roadmap.md`](./Docs/product-roadmap.md).
 
 ---
 
@@ -207,8 +202,10 @@ See [`Docs/engineering-guide.md`](./Docs/engineering-guide.md).
 | [`Docs/00-index.md`](./Docs/00-index.md) | Map, reading order, conventions |
 | [`Docs/master-prd.md`](./Docs/master-prd.md) | Full product requirements |
 | [`Docs/product-thesis.md`](./Docs/product-thesis.md) | Positioning, users, differentiation, metrics |
-| [`Docs/roadmap.md`](./Docs/roadmap.md) | Phases, MVP, gates, risks |
+| [`Docs/roadmap.md`](./Docs/roadmap.md) | Active P0–P7 plan, fast-path MVP, gates |
 | [`Docs/backlog.md`](./Docs/backlog.md) | Live stories and status |
+| [`Docs/native-execution-and-resources.md`](./Docs/native-execution-and-resources.md) | Native runtime, budgets, browser, cleanup, memory/RAG |
+| [`Docs/product-roadmap.md`](./Docs/product-roadmap.md) | Deferred M0–M11 product plan |
 | [`Docs/technical-architecture.md`](./Docs/technical-architecture.md) | Stack, topology, flows, scaling |
 | [`Docs/extensibility-and-modules.md`](./Docs/extensibility-and-modules.md) | Engine/module contracts, multi-engine routing |
 | [`Docs/data-model.md`](./Docs/data-model.md) | Schema, states, retention |
@@ -231,10 +228,11 @@ See [`Docs/engineering-guide.md`](./Docs/engineering-guide.md).
 4. **Ask at the edge of judgment.** Approvals are specific; no blanket toggles.
 5. **Show the evidence.** "Done" requires proof.
 6. **Engines are replaceable.** OpenCode is first, not forever.
-7. **Boring infrastructure.** One Postgres, one compose file, one VPS.
+7. **Boring infrastructure.** One Postgres, one host, native systemd; Docker optional.
 8. **Own your data.** No hidden telemetry, no required hosted service.
-9. **Extend without forking.** Skills, engines and adapters are modules.
-10. **Under-promise, verify, then report.**
+9. **Extend without forking.** Skills, engines, adapters and runtimes are modules.
+10. **Resources are not the agent's to take.** The operator owns the budget.
+11. **Under-promise, verify, then report.**
 
 ---
 
@@ -264,9 +262,9 @@ This keeps the self-hosted product open, including when someone hosts a modified
 
 **Is this another chatbot?** No. Chat is one interface onto durable tasks, workers, approvals and an audit trail.
 
-**Do I need a GPU?** No. Models are API-provided (or local via Ollama if you want). A 2 vCPU / 4 GB VPS is the target.
+**Do I need a GPU?** No. Models are API-provided (or local via Ollama if you want). The current target is a shared 4 GB / 1 vCPU VPS, with a host reserve and one heavy execution at a time.
 
-**Do I have to use OpenCode?** No. It is the first engine, shipped in v0.1. Cline is the second (v0.2), and Codex CLI, Aider or a custom engine can run behind the same contract. Several can coexist, per project or per task.
+**Do I have to use OpenCode?** No. It is the first engine (P4). Cline and others can run behind the same contract. Several can coexist, subject to the operator budget.
 
 **Does it phone home?** No telemetry by default. No required MicroDots service.
 

@@ -51,7 +51,7 @@ Use **PostgreSQL 17 as the only datastore**, with **pg-boss** for durable jobs. 
 
 - Job payload ≤ 4 KB, IDs only.
 - One queue per concern; no unbounded retries.
-- `pg_stat_statements` and queue-depth metrics from M4.
+- `pg_stat_statements` and queue-depth metrics from P2.
 - If queue wait p95 exceeds 60 s under real load, revisit with an ADR (likely a dedicated worker host before a new broker).
 
 ## Alternatives rejected
@@ -64,4 +64,5 @@ Use **PostgreSQL 17 as the only datastore**, with **pg-boss** for durable jobs. 
 
 - [`data-model.md`](../data-model.md) §12
 - [`technical-architecture.md`](../technical-architecture.md) §5.5, §6.5
-- [`roadmap.md`](../roadmap.md) M2
+- [`roadmap.md`](../roadmap.md) P2
+- Deferred product milestone: [`product-roadmap.md`](../product-roadmap.md) M2
