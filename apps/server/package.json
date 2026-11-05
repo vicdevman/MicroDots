@@ -16,7 +16,7 @@
     "@microdots/config": "workspace:*",
     "@microdots/contracts": "workspace:*",
     "@microdots/db": "workspace:*",
-    "fastify": "^5.5.0",
+    "fastify": "^5.12.8",
     "pino": "^9.9.0"
   },
   "devDependencies": {
